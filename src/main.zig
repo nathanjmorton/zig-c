@@ -186,6 +186,8 @@ pub const RegistryEntry = struct {
 
 /// Load the local registry cache (~/.zigc/registry.json) and look up `name`.
 /// Returns null if the file doesn't exist or `name` isn't in it.
+/// The returned entry's strings are heap-allocated; caller must free them
+/// with `freeRegistryEntry`.
 pub fn registryLookup(allocator: std.mem.Allocator, io: std.Io, name: []const u8) ?RegistryEntry {
     const home = std.mem.sliceTo(std.c.getenv("HOME") orelse return null, 0);
     const path = std.fmt.allocPrint(allocator, "{s}/.zigc/registry.json", .{home}) catch return null;
@@ -193,7 +195,20 @@ pub fn registryLookup(allocator: std.mem.Allocator, io: std.Io, name: []const u8
     const cwd = std.Io.Dir.cwd();
     const data = cwd.readFileAlloc(io, path, allocator, .unlimited) catch return null;
     defer allocator.free(data);
-    return registryLookupFromJson(data, name);
+    const raw = registryLookupFromJson(data, name) orelse return null;
+    // raw slices point into data which is about to be freed — dupe them.
+    return RegistryEntry{
+        .url = allocator.dupe(u8, raw.url) catch return null,
+        .hash = allocator.dupe(u8, raw.hash) catch return null,
+        .lib = allocator.dupe(u8, raw.lib) catch return null,
+    };
+}
+
+/// Free strings owned by a RegistryEntry returned from `registryLookup`.
+pub fn freeRegistryEntry(allocator: std.mem.Allocator, entry: RegistryEntry) void {
+    allocator.free(entry.url);
+    allocator.free(entry.hash);
+    allocator.free(entry.lib);
 }
 
 /// Look up `name` in raw JSON registry content. Returns null if not found.
@@ -414,10 +429,7 @@ pub fn insertZonDep(allocator: std.mem.Allocator, zon: []const u8, key: []const 
     const insert_at = deps_pos + DEPS_OPEN.len;
 
     const snippet = try std.fmt.allocPrint(allocator,
-        \\\n        .{s} = .{{
-        \\            .url = "{s}",
-        \\            .hash = "{s}",
-        \\        }},
+        "\n        .{s} = .{{\n            .url = \"{s}\",\n            .hash = \"{s}\",\n        }},"
     , .{ key, url, hash });
     defer allocator.free(snippet);
 
@@ -618,6 +630,7 @@ fn cmdAdd(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !v
             std.debug.print("  Run 'zigc registry update' to refresh, or pass a full URL.\n", .{});
             return error.RegistryMiss;
         };
+        defer freeRegistryEntry(allocator, entry);
         const key = target;
         const lib = lib_override orelse entry.lib;
 
