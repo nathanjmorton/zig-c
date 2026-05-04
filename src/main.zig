@@ -87,7 +87,7 @@ const TMPL_GITIGNORE =
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Returns a new allocation with every occurrence of `needle` replaced by `replacement`.
-fn replaceAll(
+pub fn replaceAll(
     allocator: std.mem.Allocator,
     src: []const u8,
     needle: []const u8,
