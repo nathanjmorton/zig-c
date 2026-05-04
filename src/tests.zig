@@ -1,6 +1,6 @@
 const std = @import("std");
 
-// Path to the zig-c binary, injected at build time via b.addOptions().
+// Path to the zigc binary, injected at build time via b.addOptions().
 const zig_c_path: []const u8 = @import("options").zig_c_path;
 
 // Import main.zig to unit-test its exported functions.
@@ -301,7 +301,7 @@ test "removeBuildLink: removes dep lines" {
     try std.testing.expect(std.mem.indexOf(u8, removed, "b.addExecutable") != null);
 }
 
-// ── Integration: zig-c init ───────────────────────────────────────────────
+// ── Integration: zigc init ───────────────────────────────────────────────
 
 test "init: creates all expected files with correct content" {
     var tmp = std.testing.tmpDir(.{});
@@ -556,7 +556,7 @@ test "clean on a fresh project (no artifacts) succeeds" {
     try ok(r);
 }
 
-// ── Integration: zig-c check ───────────────────────────────────────────────────
+// ── Integration: zigc check ───────────────────────────────────────────────────
 
 test "check: fresh project passes all checks" {
     var tmp = std.testing.tmpDir(.{});
