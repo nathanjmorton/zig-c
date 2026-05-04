@@ -14,9 +14,10 @@ A C project and package manager built on top of [Zig's build system](https://zig
 zig-c/
 ├── src/
 │   ├── main.zig      # All commands, parsers, and integrity helpers
-│   └── tests.zig     # 45 tests: unit (pure functions) + integration (full CLI)
+│   └── tests.zig     # Unit (pure functions) + integration (full CLI) tests
 ├── build.zig         # Zig build script for zigc itself
 ├── build.zig.zon     # Package manifest (depends on lz4 for the hello.c demo)
+├── registry.json     # Package registry: friendly name → url + hash + lib
 ├── hello.c           # lz4 compression demo — proves the package pipeline works
 └── README.md
 ```
@@ -30,13 +31,19 @@ zig-c/
 | `parseZonDeps` | Brace-depth scanner for `.dependencies = .{…}` |
 | `parseZonPaths` | Extracts quoted strings from `.paths = .{…}` |
 | `parseBuildDeps` | Collects (deduplicated) `b.dependency("key")` calls from `build.zig` |
+| `RegistryEntry` struct | `{ url, hash, lib }` for a named package in the registry |
+| `registryLookup` | Reads `~/.zigc/registry.json`, returns a duped `RegistryEntry` |
+| `registryLookupFromJson` | Parses raw JSON registry content for a given key |
+| `extractJsonArrayField` | Pulls field values from a JSON array of objects |
+| `extractJsonNestedField` | Extracts a nested string field from the first JSON array element |
 | `insertBuildLink` | Injects `b.dependency` + `mod.linkLibrary` before `addExecutable` (idempotent) |
+| `insertZonDep` | Writes a `.dep = .{ .url, .hash }` block directly into `build.zig.zon` |
 | `removeBuildLink` | Strips linking lines matching `<key>_dep` |
 | `removeZonDep` | Removes a named dep block from `build.zig.zon` |
 | `insertFingerprint` | Appends `.fingerprint` before the closing `}` |
 | `buildArgv` | Constructs `zig build` argv with flag translation and `-Dcflags=` passthrough |
 | `execZig` | Runs a zig subcommand; auto-inserts missing fingerprint and retries |
-| `cmdInit` … `cmdVerify` | Nine command handlers |
+| `cmdInit` … `cmdRegistryGenerate` | Eleven command handlers |
 
 ---
 
@@ -90,21 +97,32 @@ Hello from my-app!
 
 ### 3 — Add a dependency
 
-Dependencies are pulled from any URL `zig fetch` understands — typically a tagged release from [allyourcodebase](https://github.com/allyourcodebase).
+The simplest way is to use a friendly name from the registry:
+
+```sh
+zigc registry update     # fetch the package registry (first time)
+zigc add lz4             # resolve from registry and link
+```
+
+```
+Added 'lz4' from registry and linked in build.zig.
+  artifact: lz4_dep.artifact("lz4")
+```
+
+You can also pass a full URL directly (no registry needed):
 
 ```sh
 zigc add git+https://github.com/allyourcodebase/lz4.git#1.10.0-6
 ```
 
-```
-info: resolved ref '1.10.0-6' to commit 41f52ab...
-Added 'lz4' and linked in build.zig.
-  artifact: lz4_dep.artifact("lz4")
-```
+**Registry-based flow** (`zigc add <name>`):
+- Looks up the name in `~/.zigc/registry.json` (pre-computed URL + hash)
+- Writes the dependency directly to `build.zig.zon` — no network fetch needed
+- Injects the linking boilerplate into `build.zig`
 
-`zigc` automatically:
+**URL-based flow** (`zigc add <url>`):
 - Runs `zig fetch --save` to pin the URL and content hash in `build.zig.zon`
-- Detects the new package key (`lz4`)
+- Detects the new package key
 - Injects the linking boilerplate into `build.zig`:
 
 ```zig
@@ -215,9 +233,11 @@ zigc clean        # removes .zig-cache/ and zig-out/
 | Command | Description |
 |---|---|
 | `zigc init <name>` | Scaffold a new C project in `./<name>/` |
-| `zigc add <url> [--lib <name>]` | Fetch a dependency and auto-link it in `build.zig` |
+| `zigc add <name\|url> [--lib <name>]` | Add a dependency by registry name or URL |
 | `zigc remove <name>` | Remove a dependency from the manifest and `build.zig` |
 | `zigc list` | Show all declared dependencies and their pinned URLs |
+| `zigc registry update` | Fetch the latest package registry to `~/.zigc/registry.json` |
+| `zigc registry generate [--limit N]` | Scrape `allyourcodebase` org → `registry.json` in cwd |
 | `zigc check [--build]` | Verify manifest fields, paths, and dep consistency |
 | `zigc verify [--symbols]` | Inspect compiled object files and binary symbol table |
 | `zigc build [flags]` | Compile the project (`zig build`) |
@@ -286,13 +306,26 @@ zigc add git+https://github.com/allyourcodebase/grpc.git#master --lib grpc
 - **`build.zig`** — a Zig build script using the 0.16.0 module API (`b.createModule`, `mod.addCSourceFiles`, `mod.linkLibrary`)
 - **`build.zig.zon`** — the package manifest that pins dependency URLs and content hashes
 
-**`zigc add` flow:**
+**`zigc add <name>` flow (registry):**
+1. Look up `name` in `~/.zigc/registry.json`
+2. Write the pre-computed URL + hash directly into `build.zig.zon`
+3. Insert `b.dependency(…)` + `mod.linkLibrary(…)` into `build.zig`
+
+**`zigc add <url>` flow (direct):**
 1. Snapshot existing dep keys from `build.zig.zon`
 2. Run `zig fetch --save <url>` to resolve and pin the package
 3. Diff before/after to identify the new dep key
 4. Insert `b.dependency(…)` + `mod.linkLibrary(…)` into `build.zig`
 
-**Fingerprint handling:** Zig 0.16.0 requires a `.fingerprint` field in `build.zig.zon`. `zigc` captures the suggested value from `zig fetch`'s stderr on first use and inserts it automatically.
+**`zigc registry generate` flow:**
+1. Fetch all repos from the `allyourcodebase` GitHub org (paginated API)
+2. For each repo with tags: get the latest tag name + commit SHA
+3. Run `zig fetch` to compute the content hash
+4. Write `registry.json` with `name → { url, hash, lib }` entries
+
+Supports `GITHUB_TOKEN` env var for authenticated API access (5000 req/hr vs 60). Use `--limit N` for testing.
+
+**Fingerprint handling:**
 
 **Flag translation:** `zigc build -O3 -Wall` is translated to `zig build -Doptimize=ReleaseFast -Dcflags=-Wall` by the `buildArgv` helper before invoking `zig build`. The generated `build.zig` template accepts the `-Dcflags` option and appends each comma-separated flag to the C compiler invocation.
 

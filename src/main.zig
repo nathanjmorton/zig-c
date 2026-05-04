@@ -11,6 +11,7 @@ const usage =
     \\  zigc remove <name>          Remove a dependency
     \\  zigc list                   List installed dependencies
     \\  zigc registry update        Fetch the latest package registry
+    \\  zigc registry generate [--limit N]  Scrape allyourcodebase → registry.json
     \\  zigc check  [--build]       Verify project integrity
     \\  zigc verify [--symbols]     Inspect object files and symbols
     \\  zigc build  [flags]         Build the current project  (zig build)
@@ -277,6 +278,39 @@ fn extractJsonString(block: []const u8, key: []const u8) ?[]const u8 {
         }
     }
     return null;
+}
+
+/// Extract all values of `key` from a JSON array of objects.
+/// e.g. from `[{"name":"lz4"},{"name":"zlib"}]` with key="name" → {"lz4","zlib"}
+pub fn extractJsonArrayField(allocator: std.mem.Allocator, json: []const u8, key: []const u8) ![][]const u8 {
+    var list: std.ArrayList([]const u8) = .empty;
+    // Walk through array elements (top-level objects).
+    var pos: usize = 0;
+    while (pos < json.len) {
+        // Find next object open brace at depth 1 (inside the array).
+        const obj_start = std.mem.indexOfScalarPos(u8, json, pos, '{') orelse break;
+        const obj_end = findMatchingBrace(json, obj_start) orelse break;
+        const obj = json[obj_start .. obj_end + 1];
+        if (extractJsonString(obj, key)) |val| {
+            try list.append(allocator, try allocator.dupe(u8, val));
+        }
+        pos = obj_end + 1;
+    }
+    return list.toOwnedSlice(allocator);
+}
+
+/// Extract a nested string field from the first object in a JSON array.
+/// e.g. from `[{"commit":{"sha":"abc"}}]`, outer="commit", inner="sha" → "abc"
+pub fn extractJsonNestedField(json: []const u8, outer_key: []const u8, inner_key: []const u8) ?[]const u8 {
+    // Find the first object.
+    const obj_start = std.mem.indexOfScalar(u8, json, '{') orelse return null;
+    const obj_end = findMatchingBrace(json, obj_start) orelse return null;
+    const obj = json[obj_start .. obj_end + 1];
+    // Find the nested object for outer_key.
+    const nested_start = findJsonKey(obj, outer_key) orelse return null;
+    const nested_end = findMatchingBrace(obj, nested_start) orelse return null;
+    const nested = obj[nested_start .. nested_end + 1];
+    return extractJsonString(nested, inner_key);
 }
 
 // ── Package management types + helpers ───────────────────────────────────────
@@ -1211,6 +1245,148 @@ fn cmdRun(io: std.Io, allocator: std.mem.Allocator, extra: []const []const u8) !
     try execZig(io, allocator, argv);
 }
 
+fn cmdRegistryGenerate(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
+    const API_BASE = "https://api.github.com";
+    const ORG = "allyourcodebase";
+
+    // Optional --limit N to cap the number of repos processed.
+    var limit: usize = std.math.maxInt(usize);
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        if (std.mem.eql(u8, args[i], "--limit") and i + 1 < args.len) {
+            limit = std.fmt.parseInt(usize, args[i + 1], 10) catch 0;
+            i += 1;
+        }
+    }
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const ar = arena.allocator();
+
+    // Build curl auth header if GITHUB_TOKEN is set.
+    const token_ptr = std.c.getenv("GITHUB_TOKEN");
+    const auth_header: ?[]const u8 = if (token_ptr) |tp|
+        try std.fmt.allocPrint(ar, "Authorization: token {s}", .{std.mem.sliceTo(tp, 0)})
+    else
+        null;
+
+    // ── 1. Fetch repo list (paginated) ──────────────────────────────────────
+    std.debug.print("Fetching repo list from {s}...\n", .{ORG});
+    var all_repos: std.ArrayList([]const u8) = .empty;
+    var page: usize = 1;
+    while (true) {
+        const api_url = try std.fmt.allocPrint(ar,
+            "{s}/orgs/{s}/repos?per_page=100&page={d}", .{ API_BASE, ORG, page });
+        var curl_args: std.ArrayList([]const u8) = .empty;
+        try curl_args.appendSlice(ar, &.{ "curl", "-sf" });
+        if (auth_header) |h| try curl_args.appendSlice(ar, &.{ "-H", h });
+        try curl_args.append(ar, api_url);
+        const result = try std.process.run(ar, io, .{ .argv = curl_args.items });
+        const ok = switch (result.term) { .exited => |c| c == 0, else => false };
+        if (!ok or result.stdout.len < 3) break; // empty page or error
+        const names = try extractJsonArrayField(ar, result.stdout, "name");
+        if (names.len == 0) break;
+        try all_repos.appendSlice(ar, names);
+        if (names.len < 100) break; // last page
+        page += 1;
+    }
+    std.debug.print("Found {d} repos\n", .{all_repos.items.len});
+
+    // ── 2. Create temp directory for zig fetch ──────────────────────────────
+    const cwd = std.Io.Dir.cwd();
+    const tmp_dir = "/tmp/zigc-registry-gen";
+    cwd.deleteTree(io, tmp_dir) catch {};
+    try cwd.createDir(io, tmp_dir, .default_dir);
+    var td = try cwd.openDir(io, tmp_dir, .{});
+    defer td.close(io);
+    try td.writeFile(io, .{ .sub_path = "build.zig.zon",
+        .data = ".{ .name = .tmp, .version = \"0.0.0\", .paths = .{}, .dependencies = .{} }\n" });
+    try td.writeFile(io, .{ .sub_path = "build.zig",
+        .data = "const std = @import(\"std\");\npub fn build(b: *std.Build) void { _ = b; }\n" });
+
+    // ── 3. Process each repo ────────────────────────────────────────────────
+    var json_buf: std.ArrayList(u8) = .empty;
+    try json_buf.appendSlice(ar, "{\n");
+    var n_ok: usize = 0;
+    var n_skip: usize = 0;
+    const count = @min(all_repos.items.len, limit);
+
+    for (all_repos.items[0..count], 0..) |repo_name, idx| {
+        std.debug.print("[{d}/{d}] {s}...", .{ idx + 1, count, repo_name });
+
+        // Fetch latest tag.
+        const tags_url = try std.fmt.allocPrint(ar,
+            "{s}/repos/{s}/{s}/tags?per_page=1", .{ API_BASE, ORG, repo_name });
+        var tag_args: std.ArrayList([]const u8) = .empty;
+        try tag_args.appendSlice(ar, &.{ "curl", "-sf" });
+        if (auth_header) |h| try tag_args.appendSlice(ar, &.{ "-H", h });
+        try tag_args.append(ar, tags_url);
+        const tag_result = try std.process.run(ar, io, .{ .argv = tag_args.items });
+        const tag_ok = switch (tag_result.term) { .exited => |c| c == 0, else => false };
+        if (!tag_ok or tag_result.stdout.len < 3) {
+            std.debug.print(" skip (no tags)\n", .{});
+            n_skip += 1;
+            continue;
+        }
+
+        // Extract tag name and commit SHA.
+        const tag_names = try extractJsonArrayField(ar, tag_result.stdout, "name");
+        if (tag_names.len == 0) {
+            std.debug.print(" skip (no tags)\n", .{});
+            n_skip += 1;
+            continue;
+        }
+        const tag_name = tag_names[0];
+        const commit_sha = extractJsonNestedField(tag_result.stdout, "commit", "sha") orelse {
+            std.debug.print(" skip (no commit sha)\n", .{});
+            n_skip += 1;
+            continue;
+        };
+
+        // Build the URL and run zig fetch.
+        const git_url = try std.fmt.allocPrint(ar,
+            "git+https://github.com/{s}/{s}.git?ref={s}#{s}",
+            .{ ORG, repo_name, tag_name, commit_sha });
+
+        const fetch_result = try std.process.run(ar, io, .{
+            .argv = &.{ "zig", "fetch", git_url },
+            .cwd = .{ .path = tmp_dir },
+        });
+        const fetch_ok = switch (fetch_result.term) { .exited => |c| c == 0, else => false };
+        if (!fetch_ok or fetch_result.stdout.len == 0) {
+            std.debug.print(" skip (zig fetch failed)\n", .{});
+            n_skip += 1;
+            continue;
+        }
+        const hash = std.mem.trimEnd(u8, fetch_result.stdout, "\n\r ");
+
+        // Derive lib name: lowercase the repo name, replace hyphens with underscores.
+        const lib = try ar.dupe(u8, repo_name);
+        for (lib) |*ch| {
+            if (ch.* == '-') ch.* = '_';
+            ch.* = std.ascii.toLower(ch.*);
+        }
+
+        // Append JSON entry.
+        if (n_ok > 0) try json_buf.appendSlice(ar, ",\n");
+        const entry = try std.fmt.allocPrint(ar,
+            "  \"{s}\": {{\n    \"url\": \"{s}\",\n    \"hash\": \"{s}\",\n    \"lib\": \"{s}\"\n  }}",
+            .{ lib, git_url, hash, lib });
+        try json_buf.appendSlice(ar, entry);
+        n_ok += 1;
+        std.debug.print(" ok ({s})\n", .{tag_name});
+    }
+
+    try json_buf.appendSlice(ar, "\n}\n");
+
+    // ── 4. Write registry.json ──────────────────────────────────────────────
+    try cwd.writeFile(io, .{ .sub_path = "registry.json", .data = json_buf.items });
+    std.debug.print("\nWrote registry.json: {d} packages ({d} skipped)\n", .{ n_ok, n_skip });
+
+    // Clean up temp dir.
+    cwd.deleteTree(io, tmp_dir) catch {};
+}
+
 fn cmdRegistryUpdate(io: std.Io, allocator: std.mem.Allocator) !void {
     const home_ptr = std.c.getenv("HOME") orelse {
         std.debug.print("error: HOME not set\n", .{});
@@ -1316,8 +1492,10 @@ pub fn main(init: std.process.Init) !void {
     } else if (std.mem.eql(u8, cmd, "registry")) {
         if (rest.len > 0 and std.mem.eql(u8, rest[0], "update")) {
             try cmdRegistryUpdate(io, allocator);
+        } else if (rest.len > 0 and std.mem.eql(u8, rest[0], "generate")) {
+            try cmdRegistryGenerate(io, allocator, rest[1..]);
         } else {
-            std.debug.print("Usage: zigc registry update\n", .{});
+            std.debug.print("Usage: zigc registry <update|generate>\n", .{});
             return error.MissingArgument;
         }
     } else if (std.mem.eql(u8, cmd, "clean")) {
