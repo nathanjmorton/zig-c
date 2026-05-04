@@ -968,15 +968,24 @@ fn mapOptFlag(arg: []const u8) ?[]const u8 {
     return null;
 }
 
+/// Return true if `name` (the part after `-D`) looks like a Zig build option.
+/// Zig options are lower-snake-case (e.g. `optimize`, `target`, `cflags`).
+/// C macros are typically UPPER_CASE (e.g. `NDEBUG`, `DEBUG`, `FOO=1`).
+/// This lets us route `-DNDEBUG` to -Dcflags while `-Doptimize=...` passes through.
+pub fn isBuildOption(name: []const u8) bool {
+    return name.len > 0 and std.ascii.isLower(name[0]);
+}
+
 /// Build the argv for a `zig build [step]` invocation with flag passthrough.
 /// Rules:
-///   -O1 / -O2 / -O3 / -Ofast  → -Doptimize=ReleaseFast
-///   -Os                         → -Doptimize=ReleaseSmall
-///   -Og / -O                    → -Doptimize=ReleaseSafe
-///   -D… / --…                   → passed through unchanged
-///   -W* / -f* / -D* (C macros)  → accumulated into -Dcflags=flag1,flag2
-///   --                          → separator; everything after goes to the run step
-fn buildArgv(
+///   -O1 / -O2 / -O3 / -Ofast        → -Doptimize=ReleaseFast
+///   -Os                               → -Doptimize=ReleaseSmall
+///   -Og / -O                          → -Doptimize=ReleaseSafe
+///   -D<lower>… (Zig option)  / --…   → passed through unchanged
+///   -D<UPPER>… (C macro, e.g. -DFOO) → accumulated into -Dcflags=
+///   any other -flag (-Wall, -Werror…) → accumulated into -Dcflags=
+///   --                                → separator; everything after → run step
+pub fn buildArgv(
     ar: std.mem.Allocator,
     base: []const []const u8,
     extra: []const []const u8,
@@ -995,12 +1004,12 @@ fn buildArgv(
             try argv.append(ar, arg);
         } else if (mapOptFlag(arg)) |mapped| {
             try argv.append(ar, mapped);
-        } else if (std.mem.startsWith(u8, arg, "-D") or
-                   std.mem.startsWith(u8, arg, "--"))
-        {
-            try argv.append(ar, arg); // native zig build flags pass through
+        } else if (std.mem.startsWith(u8, arg, "-D") and isBuildOption(arg[2..])) {
+            try argv.append(ar, arg); // Zig build option (-Doptimize=…, -Dcflags=…)
+        } else if (std.mem.startsWith(u8, arg, "--")) {
+            try argv.append(ar, arg); // long zig flags (--verbose, --summary)
         } else if (std.mem.startsWith(u8, arg, "-")) {
-            try cflags.append(ar, arg); // C-style flags → -Dcflags=
+            try cflags.append(ar, arg); // C flags: -Wall, -DFOO, -DNDEBUG, …
         } else {
             try argv.append(ar, arg); // step names or positional args
         }

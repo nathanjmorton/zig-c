@@ -204,6 +204,105 @@ test "parseBuildDeps: no dependency calls" {
     try std.testing.expectEqual(@as(usize, 0), keys.len);
 }
 
+// ── Unit tests: flag routing (isBuildOption + buildArgv) ───────────────────────
+
+// Helper: call buildArgv with an arena and return just the final argument slice.
+// The arena is the allocator so strings stay valid for the duration of the test.
+fn argvFor(ar: std.mem.Allocator, base: []const []const u8, extra: []const []const u8) ![]const []const u8 {
+    return main.buildArgv(ar, base, extra);
+}
+
+test "isBuildOption: Zig options start with lowercase" {
+    try std.testing.expect(main.isBuildOption("optimize=ReleaseFast"));
+    try std.testing.expect(main.isBuildOption("cflags=-Wall"));
+    try std.testing.expect(main.isBuildOption("target=x86_64-linux"));
+    try std.testing.expect(main.isBuildOption("verbose"));
+}
+
+test "isBuildOption: C macros start with uppercase or non-alpha" {
+    try std.testing.expect(!main.isBuildOption("NDEBUG"));
+    try std.testing.expect(!main.isBuildOption("DEBUG=1"));
+    try std.testing.expect(!main.isBuildOption("FOO=bar"));
+    try std.testing.expect(!main.isBuildOption("_POSIX_SOURCE"));
+    try std.testing.expect(!main.isBuildOption(""));
+}
+
+test "buildArgv: -O3 maps to -Doptimize=ReleaseFast" {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const argv = try argvFor(arena.allocator(), &.{ "zig", "build" }, &.{"-O3"});
+    try std.testing.expectEqual(@as(usize, 3), argv.len);
+    try std.testing.expectEqualStrings("-Doptimize=ReleaseFast", argv[2]);
+}
+
+test "buildArgv: -Os maps to -Doptimize=ReleaseSmall" {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const argv = try argvFor(arena.allocator(), &.{ "zig", "build" }, &.{"-Os"});
+    try std.testing.expectEqual(@as(usize, 3), argv.len);
+    try std.testing.expectEqualStrings("-Doptimize=ReleaseSmall", argv[2]);
+}
+
+test "buildArgv: -DNDEBUG goes to -Dcflags (not zig build flag)" {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const argv = try argvFor(arena.allocator(), &.{ "zig", "build" }, &.{"-DNDEBUG"});
+    try std.testing.expectEqual(@as(usize, 3), argv.len);
+    try std.testing.expectEqualStrings("-Dcflags=-DNDEBUG", argv[2]);
+}
+
+test "buildArgv: -Doptimize=ReleaseFast passes through unchanged" {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const argv = try argvFor(arena.allocator(), &.{ "zig", "build" }, &.{"-Doptimize=ReleaseFast"});
+    try std.testing.expectEqual(@as(usize, 3), argv.len);
+    try std.testing.expectEqualStrings("-Doptimize=ReleaseFast", argv[2]);
+}
+
+test "buildArgv: -Wall -Werror both go to -Dcflags" {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const argv = try argvFor(arena.allocator(), &.{ "zig", "build" }, &.{ "-Wall", "-Werror" });
+    try std.testing.expectEqual(@as(usize, 3), argv.len);
+    try std.testing.expectEqualStrings("-Dcflags=-Wall,-Werror", argv[2]);
+}
+
+test "buildArgv: -O3 -Wall -DNDEBUG combined" {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const argv = try argvFor(arena.allocator(), &.{ "zig", "build" }, &.{ "-O3", "-Wall", "-DNDEBUG" });
+    // Expected: ["zig", "build", "-Doptimize=ReleaseFast", "-Dcflags=-Wall,-DNDEBUG"]
+    try std.testing.expectEqual(@as(usize, 4), argv.len);
+    try std.testing.expectEqualStrings("-Doptimize=ReleaseFast", argv[2]);
+    try std.testing.expectEqualStrings("-Dcflags=-Wall,-DNDEBUG", argv[3]);
+}
+
+test "buildArgv: -- separator routes remaining args to run step" {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const argv = try argvFor(arena.allocator(), &.{ "zig", "build", "run" }, &.{ "-O3", "--", "myarg" });
+    // Expected: ["zig", "build", "run", "-Doptimize=ReleaseFast", "--", "myarg"]
+    try std.testing.expectEqual(@as(usize, 6), argv.len);
+    try std.testing.expectEqualStrings("-Doptimize=ReleaseFast", argv[3]);
+    try std.testing.expectEqualStrings("--", argv[4]);
+    try std.testing.expectEqualStrings("myarg", argv[5]);
+}
+
+test "buildArgv: --verbose passes through unchanged" {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const argv = try argvFor(arena.allocator(), &.{ "zig", "build" }, &.{"--verbose"});
+    try std.testing.expectEqual(@as(usize, 3), argv.len);
+    try std.testing.expectEqualStrings("--verbose", argv[2]);
+}
+
+test "buildArgv: no extra flags returns base unchanged" {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const argv = try argvFor(arena.allocator(), &.{ "zig", "build" }, &.{});
+    try std.testing.expectEqual(@as(usize, 2), argv.len);
+}
+
 // ── Unit tests: package management helpers ─────────────────────────────────────
 
 const zon_fixture =
