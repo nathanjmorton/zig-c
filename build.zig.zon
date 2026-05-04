@@ -1,0 +1,17 @@
+.{
+    .name = .zig_c,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "hello.c",
+    },
+    .dependencies = .{
+        .lz4 = .{
+            .url = "git+https://github.com/allyourcodebase/lz4.git?ref=1.10.0-6#41f52ab227caf9d48cf88c89a4d2946caa12b102",
+            .hash = "lz4-1.10.0-6-ewyzw-4NAAAWDpY4xpiqr4LQhZQAC0x_rGnW2iPh6jk2",
+        },
+    },
+    .fingerprint = 0x976e1b2667d2e5b3,
+}
