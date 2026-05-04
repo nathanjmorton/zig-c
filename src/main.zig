@@ -12,8 +12,8 @@ const usage =
     \\  zigc list                   List installed dependencies
     \\  zigc check  [--build]       Verify project integrity
     \\  zigc verify [--symbols]     Inspect object files and symbols
-    \\  zigc build                  Build the current project  (zig build)
-    \\  zigc run                    Build and run the project  (zig build run)
+    \\  zigc build  [flags]         Build the current project  (zig build)
+    \\  zigc run    [flags]         Build and run the project  (zig build run)
     \\  zigc clean                  Remove .zig-cache/ and zig-out/
     \\  zigc help                   Show this help
     \\
@@ -36,10 +36,18 @@ const TMPL_BUILD_ZIG =
     \\        .optimize = optimize,
     \\        .link_libc = true,
     \\    });
+    \\
+    \\    // Base C flags.  Pass extra ones with -Dcflags=-DFOO,-Werror
+    \\    var cflags: std.ArrayList([]const u8) = .empty;
+    \\    cflags.appendSlice(b.allocator, &.{ "-std=c11", "-Wall", "-Wextra" }) catch @panic("OOM");
+    \\    if (b.option([]const u8, "cflags", "Extra C flags (comma-separated)")) |extra| {
+    \\        var it = std.mem.tokenizeScalar(u8, extra, ',');
+    \\        while (it.next()) |f| cflags.append(b.allocator, f) catch @panic("OOM");
+    \\    }
     \\    mod.addCSourceFiles(.{
     \\        .root = b.path("src"),
     \\        .files = &.{"main.c"},
-    \\        .flags = &.{ "-std=c11", "-Wall", "-Wextra" },
+    \\        .flags = cflags.items,
     \\    });
     \\
     \\    const exe = b.addExecutable(.{
@@ -948,12 +956,76 @@ fn cmdList(io: std.Io, allocator: std.mem.Allocator) !void {
     }
 }
 
-fn cmdBuild(io: std.Io, allocator: std.mem.Allocator) !void {
-    try execZig(io, allocator, &.{ "zig", "build" });
+/// Map a C-style optimisation flag to the Zig build equivalent, if known.
+fn mapOptFlag(arg: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, arg, "-O1") or std.mem.eql(u8, arg, "-O2") or
+        std.mem.eql(u8, arg, "-O3") or std.mem.eql(u8, arg, "-Ofast"))
+        return "-Doptimize=ReleaseFast";
+    if (std.mem.eql(u8, arg, "-Os"))
+        return "-Doptimize=ReleaseSmall";
+    if (std.mem.eql(u8, arg, "-Og") or std.mem.eql(u8, arg, "-O"))
+        return "-Doptimize=ReleaseSafe";
+    return null;
 }
 
-fn cmdRun(io: std.Io, allocator: std.mem.Allocator) !void {
-    try execZig(io, allocator, &.{ "zig", "build", "run" });
+/// Build the argv for a `zig build [step]` invocation with flag passthrough.
+/// Rules:
+///   -O1 / -O2 / -O3 / -Ofast  → -Doptimize=ReleaseFast
+///   -Os                         → -Doptimize=ReleaseSmall
+///   -Og / -O                    → -Doptimize=ReleaseSafe
+///   -D… / --…                   → passed through unchanged
+///   -W* / -f* / -D* (C macros)  → accumulated into -Dcflags=flag1,flag2
+///   --                          → separator; everything after goes to the run step
+fn buildArgv(
+    ar: std.mem.Allocator,
+    base: []const []const u8,
+    extra: []const []const u8,
+) ![]const []const u8 {
+    var argv: std.ArrayList([]const u8) = .empty;
+    var cflags: std.ArrayList([]const u8) = .empty;
+
+    try argv.appendSlice(ar, base);
+
+    var past_sep = false;
+    for (extra) |arg| {
+        if (past_sep) {
+            try argv.append(ar, arg);
+        } else if (std.mem.eql(u8, arg, "--")) {
+            past_sep = true;
+            try argv.append(ar, arg);
+        } else if (mapOptFlag(arg)) |mapped| {
+            try argv.append(ar, mapped);
+        } else if (std.mem.startsWith(u8, arg, "-D") or
+                   std.mem.startsWith(u8, arg, "--"))
+        {
+            try argv.append(ar, arg); // native zig build flags pass through
+        } else if (std.mem.startsWith(u8, arg, "-")) {
+            try cflags.append(ar, arg); // C-style flags → -Dcflags=
+        } else {
+            try argv.append(ar, arg); // step names or positional args
+        }
+    }
+
+    if (cflags.items.len > 0) {
+        const joined = try std.mem.join(ar, ",", cflags.items);
+        try argv.append(ar, try std.fmt.allocPrint(ar, "-Dcflags={s}", .{joined}));
+    }
+
+    return argv.toOwnedSlice(ar);
+}
+
+fn cmdBuild(io: std.Io, allocator: std.mem.Allocator, extra: []const []const u8) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const argv = try buildArgv(arena.allocator(), &.{ "zig", "build" }, extra);
+    try execZig(io, allocator, argv);
+}
+
+fn cmdRun(io: std.Io, allocator: std.mem.Allocator, extra: []const []const u8) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const argv = try buildArgv(arena.allocator(), &.{ "zig", "build", "run" }, extra);
+    try execZig(io, allocator, argv);
 }
 
 fn cmdClean(io: std.Io) !void {
@@ -1000,9 +1072,9 @@ pub fn main(init: std.process.Init) !void {
     } else if (std.mem.eql(u8, cmd, "verify")) {
         try cmdVerify(io, allocator, rest);
     } else if (std.mem.eql(u8, cmd, "build")) {
-        try cmdBuild(io, allocator);
+        try cmdBuild(io, allocator, rest);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try cmdRun(io, allocator);
+        try cmdRun(io, allocator, rest);
     } else if (std.mem.eql(u8, cmd, "clean")) {
         try cmdClean(io);
     } else if (std.mem.eql(u8, cmd, "help") or
