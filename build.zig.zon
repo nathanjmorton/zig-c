@@ -1,5 +1,5 @@
 .{
-    .name = .zig_c,
+    .name = .zigc,
     .version = "0.1.0",
     .minimum_zig_version = "0.16.0",
     .paths = .{
@@ -14,5 +14,5 @@
             .hash = "lz4-1.10.0-6-ewyzw-4NAAAWDpY4xpiqr4LQhZQAC0x_rGnW2iPh6jk2",
         },
     },
-    .fingerprint = 0x976e1b2667d2e5b3,
+    .fingerprint = 0x9cc7a2c90b9e1119,
 }

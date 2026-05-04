@@ -3,18 +3,18 @@ const std = @import("std");
 // ── Usage ─────────────────────────────────────────────────────────────────────
 
 const usage =
-    \\zig-c — C project build tool powered by the Zig build system
+    \\zigc — C project build tool powered by the Zig build system
     \\
     \\Usage:
-    \\  zig-c init   <name>          Create a new C project in ./<name>/
-    \\  zig-c add    <url> [--lib n] Add and auto-link a dependency
-    \\  zig-c remove <name>          Remove a dependency
-    \\  zig-c list                   List installed dependencies
-    \\  zig-c check  [--build]       Verify project integrity
-    \\  zig-c build                  Build the current project  (zig build)
-    \\  zig-c run                    Build and run the project  (zig build run)
-    \\  zig-c clean                  Remove .zig-cache/ and zig-out/
-    \\  zig-c help                   Show this help
+    \\  zigc init   <name>          Create a new C project in ./<name>/
+    \\  zigc add    <url> [--lib n] Add and auto-link a dependency
+    \\  zigc remove <name>          Remove a dependency
+    \\  zigc list                   List installed dependencies
+    \\  zigc check  [--build]       Verify project integrity
+    \\  zigc build                  Build the current project  (zig build)
+    \\  zigc run                    Build and run the project  (zig build run)
+    \\  zigc clean                  Remove .zig-cache/ and zig-out/
+    \\  zigc help                   Show this help
     \\
 ;
 
@@ -89,7 +89,7 @@ const TMPL_GITIGNORE =
 
 // ── Integrity-check types + helpers ─────────────────────────────────────────
 
-/// Accumulates pass / warn / fail counts for `zig-c check`.
+/// Accumulates pass / warn / fail counts for `zigc check`.
 const Check = struct {
     n_ok: usize = 0,
     n_warn: usize = 0,
@@ -390,7 +390,7 @@ fn execZig(io: std.Io, allocator: std.mem.Allocator, argv: []const []const u8) !
 
 fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len == 0) {
-        std.debug.print("error: missing project name\nUsage: zig-c init <name>\n", .{});
+        std.debug.print("error: missing project name\nUsage: zigc init <name>\n", .{});
         return error.MissingArgument;
     }
     const name = args[0];
@@ -443,9 +443,9 @@ fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !
 
     std.debug.print("Created project '{s}'\n", .{name});
     std.debug.print("  cd {s}\n", .{name});
-    std.debug.print("  zig-c build         # compile\n", .{});
-    std.debug.print("  zig-c run           # compile and run\n", .{});
-    std.debug.print("  zig-c add <url>     # add a C library dependency\n", .{});
+    std.debug.print("  zigc build         # compile\n", .{});
+    std.debug.print("  zigc run           # compile and run\n", .{});
+    std.debug.print("  zigc add <url>     # add a C library dependency\n", .{});
 }
 
 /// Inserts a .fingerprint field into build.zig.zon before the closing brace.
@@ -466,7 +466,7 @@ fn insertFingerprint(io: std.Io, allocator: std.mem.Allocator, fp_str: []const u
 
 fn cmdAdd(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len == 0) {
-        std.debug.print("error: missing package URL\nUsage: zig-c add <url> [--lib <lib-name>]\n", .{});
+        std.debug.print("error: missing package URL\nUsage: zigc add <url> [--lib <lib-name>]\n", .{});
         return error.MissingArgument;
     }
     const url = args[0];
@@ -529,12 +529,12 @@ fn cmdAdd(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !v
 
     std.debug.print("Added '{s}' and linked in build.zig.\n", .{key});
     std.debug.print("  artifact: {s}_dep.artifact(\"{s}\")\n", .{ key, lib });
-    std.debug.print("  override artifact name with: zig-c add <url> --lib <name>\n", .{});
+    std.debug.print("  override artifact name with: zigc add <url> --lib <name>\n", .{});
 }
 
 fn cmdRemove(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len == 0) {
-        std.debug.print("error: missing dependency name\nUsage: zig-c remove <name>\n", .{});
+        std.debug.print("error: missing dependency name\nUsage: zigc remove <name>\n", .{});
         return error.MissingArgument;
     }
     const key = args[0];
@@ -579,7 +579,7 @@ fn cmdCheck(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) 
     const ar = arena.allocator();
     const cwd = std.Io.Dir.cwd();
 
-    std.debug.print("zig-c check\n", .{});
+    std.debug.print("zigc check\n", .{});
 
     // ── 1. Required files ──────────────────────────────────────────────────
     std.debug.print("\nRequired files:\n", .{});
@@ -632,7 +632,7 @@ fn cmdCheck(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) 
         if (std.mem.indexOf(u8, z, ".fingerprint = ") != null)
             c.ok(".fingerprint is set")
         else
-            c.warn(".fingerprint missing — zig-c add will insert it on first use");
+            c.warn(".fingerprint missing — zigc add will insert it on first use");
 
         // ── 4. .paths entries exist on disk ──────────────────────────────
         std.debug.print("\n.paths entries:\n", .{});
@@ -709,7 +709,7 @@ fn cmdCheck(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) 
 fn cmdList(io: std.Io, allocator: std.mem.Allocator) !void {
     const cwd = std.Io.Dir.cwd();
     const zon = cwd.readFileAlloc(io, "build.zig.zon", allocator, .unlimited) catch {
-        std.debug.print("error: no build.zig.zon found — are you inside a zig-c project?\n", .{});
+        std.debug.print("error: no build.zig.zon found — are you inside a zigc project?\n", .{});
         return error.NoManifest;
     };
     defer allocator.free(zon);
