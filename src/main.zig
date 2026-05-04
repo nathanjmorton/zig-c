@@ -6,12 +6,14 @@ const usage =
     \\zig-c — C project build tool powered by the Zig build system
     \\
     \\Usage:
-    \\  zig-c init <name>   Create a new C project in ./<name>/
-    \\  zig-c add  <url>    Add a dependency (zig fetch --save <url>)
-    \\  zig-c build         Build the current project  (zig build)
-    \\  zig-c run           Build and run the project  (zig build run)
-    \\  zig-c clean         Remove .zig-cache/ and zig-out/
-    \\  zig-c help          Show this help
+    \\  zig-c init   <name>          Create a new C project in ./<name>/
+    \\  zig-c add    <url> [--lib n] Add and auto-link a dependency
+    \\  zig-c remove <name>          Remove a dependency
+    \\  zig-c list                   List installed dependencies
+    \\  zig-c build                  Build the current project  (zig build)
+    \\  zig-c run                    Build and run the project  (zig build run)
+    \\  zig-c clean                  Remove .zig-cache/ and zig-out/
+    \\  zig-c help                   Show this help
     \\
 ;
 
@@ -83,6 +85,158 @@ const TMPL_GITIGNORE =
     \\zig-out/
     \\
 ;
+
+// ── Package management types + helpers ───────────────────────────────────────
+
+/// One entry from the .dependencies table in build.zig.zon.
+pub const Dependency = struct {
+    key: []const u8, // Zig identifier used as the dep key
+    url: []const u8, // Remote URL (empty for path deps)
+};
+
+/// Free every string in `deps` then free the slice itself.
+fn freeDeps(allocator: std.mem.Allocator, deps: []Dependency) void {
+    for (deps) |d| {
+        allocator.free(d.key);
+        allocator.free(d.url);
+    }
+    allocator.free(deps);
+}
+
+/// Parse all entries from the `.dependencies = .{ ... }` block of a
+/// build.zig.zon file.  Returns a heap-allocated slice; caller owns it
+/// and should free with `freeDeps`.
+pub fn parseZonDeps(allocator: std.mem.Allocator, zon: []const u8) ![]Dependency {
+    var list: std.ArrayList(Dependency) = .empty;
+
+    const DEPS_OPEN = ".dependencies = .{";
+    const deps_pos = std.mem.indexOf(u8, zon, DEPS_OPEN) orelse
+        return list.toOwnedSlice(allocator);
+
+    var pos = deps_pos + DEPS_OPEN.len;
+    var depth: usize = 1; // depth relative to the .dependencies = .{ }
+    var cur_key: ?[]const u8 = null;
+    var dep_open: usize = 0; // index of '{' for the current dep block
+
+    while (pos < zon.len) : (pos += 1) {
+        switch (zon[pos]) {
+            '{' => depth += 1,
+            '}' => {
+                if (depth == 1) break; // end of .dependencies block
+                if (depth == 2) { // closing a dep block
+                    if (cur_key) |key| {
+                        const block = zon[dep_open .. pos + 1];
+                        const url = url: {
+                            const pfx = ".url = \"";
+                            if (std.mem.indexOf(u8, block, pfx)) |u| {
+                                const us = u + pfx.len;
+                                const ue = std.mem.indexOf(u8, block[us..], "\"") orelse break :url "";
+                                break :url block[us .. us + ue];
+                            }
+                            break :url "";
+                        };
+                        try list.append(allocator, .{
+                            .key = try allocator.dupe(u8, key),
+                            .url = try allocator.dupe(u8, url),
+                        });
+                        cur_key = null;
+                    }
+                }
+                depth -= 1;
+            },
+            // At depth 1 inside .dependencies, look for `.key = .{` patterns.
+            '.' => if (depth == 1) {
+                const ks = pos + 1;
+                var ke = ks;
+                while (ke < zon.len and (std.ascii.isAlphanumeric(zon[ke]) or zon[ke] == '_')) ke += 1;
+                if (ke > ks) {
+                    var r = ke;
+                    while (r < zon.len and (zon[r] == ' ' or zon[r] == '\t')) r += 1;
+                    if (r + 4 <= zon.len and std.mem.startsWith(u8, zon[r..], "= .{")) {
+                        cur_key = zon[ks..ke];
+                        dep_open = r + 3; // position of '{'
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
+    return list.toOwnedSlice(allocator);
+}
+
+/// Remove the named dependency block from build.zig.zon content.
+/// Returns `error.DepNotFound` if the key is absent.
+fn removeZonDep(allocator: std.mem.Allocator, zon: []const u8, key: []const u8) ![]u8 {
+    const pattern = try std.fmt.allocPrint(allocator, ".{s} = .{{", .{key});
+    defer allocator.free(pattern);
+
+    const dep_pos = std.mem.indexOf(u8, zon, pattern) orelse return error.DepNotFound;
+
+    // Rewind to start of the line so we include leading whitespace.
+    var line_start = dep_pos;
+    while (line_start > 0 and zon[line_start - 1] != '\n') line_start -= 1;
+
+    // Scan forward to the matching closing `}` of this dep block.
+    var i = dep_pos;
+    var depth: usize = 0;
+    while (i < zon.len) : (i += 1) {
+        if (zon[i] == '{') depth += 1 else if (zon[i] == '}') {
+            depth -= 1;
+            if (depth == 0) { i += 1; break; }
+        }
+    }
+    if (i < zon.len and zon[i] == ',') i += 1;
+    if (i < zon.len and zon[i] == '\n') i += 1;
+
+    return std.mem.concat(allocator, u8, &.{ zon[0..line_start], zon[i..] });
+}
+
+/// Insert `b.dependency` + `mod.linkLibrary` calls into build.zig content,
+/// placed just before `const exe = b.addExecutable`.  No-op if `key_dep`
+/// already appears in the file.
+pub fn insertBuildLink(allocator: std.mem.Allocator, build_zig: []const u8, key: []const u8, lib: []const u8) ![]u8 {
+    // Idempotency guard.
+    const var_name = try std.fmt.allocPrint(allocator, "{s}_dep", .{key});
+    defer allocator.free(var_name);
+    if (std.mem.indexOf(u8, build_zig, var_name) != null) return allocator.dupe(u8, build_zig);
+
+    const MARKER = "const exe = b.addExecutable";
+    // Rewind to the start of the line so leading whitespace stays with build_zig[ins..]
+    // and the snippet isn't double-indented.
+    var ins = std.mem.indexOf(u8, build_zig, MARKER) orelse return allocator.dupe(u8, build_zig);
+    while (ins > 0 and build_zig[ins - 1] != '\n') ins -= 1;
+
+    // {{ and }} in the format string produce literal { and } in the output.
+    const snippet = try std.fmt.allocPrint(allocator,
+        \\    const {s}_dep = b.dependency("{s}", .{{ .target = target, .optimize = optimize }});
+        \\    mod.linkLibrary({s}_dep.artifact("{s}"));
+        \\
+        \\
+    , .{ key, key, key, lib });
+    defer allocator.free(snippet);
+
+    return std.mem.concat(allocator, u8, &.{ build_zig[0..ins], snippet, build_zig[ins..] });
+}
+
+/// Remove all lines referencing `<key>_dep` from build.zig content.
+pub fn removeBuildLink(allocator: std.mem.Allocator, build_zig: []const u8, key: []const u8) ![]u8 {
+    const dep_var = try std.fmt.allocPrint(allocator, "{s}_dep", .{key});
+    defer allocator.free(dep_var);
+
+    var out: std.ArrayList(u8) = .empty;
+    var iter = std.mem.splitScalar(u8, build_zig, '\n');
+    while (iter.next()) |line| {
+        if (std.mem.indexOf(u8, line, dep_var) != null) continue;
+        try out.appendSlice(allocator, line);
+        try out.append(allocator, '\n');
+    }
+    // Restore original trailing-newline behaviour.
+    if (out.items.len > 0 and build_zig.len > 0 and build_zig[build_zig.len - 1] != '\n') {
+        out.items.len -= 1;
+    }
+    return out.toOwnedSlice(allocator);
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -234,21 +388,129 @@ fn insertFingerprint(io: std.Io, allocator: std.mem.Allocator, fp_str: []const u
 
 fn cmdAdd(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len == 0) {
-        std.debug.print("error: missing package URL\nUsage: zig-c add <url>\n", .{});
+        std.debug.print("error: missing package URL\nUsage: zig-c add <url> [--lib <lib-name>]\n", .{});
         return error.MissingArgument;
     }
-    try execZig(io, allocator, &.{ "zig", "fetch", "--save", args[0] });
+    const url = args[0];
 
-    // {{ and }} are fmt-string escapes that produce literal { and }.
-    std.debug.print(
-        \\
-        \\Dependency saved to build.zig.zon.
-        \\To link it, add to your build.zig:
-        \\
-        \\  const dep = b.dependency("<name>", .{{ .target = target, .optimize = optimize }});
-        \\  mod.linkLibrary(dep.artifact("<lib>"));
-        \\
-    , .{});
+    // Optional --lib <name> overrides the artifact name (defaults to dep key).
+    var lib_override: ?[]const u8 = null;
+    var i: usize = 1;
+    while (i < args.len) : (i += 1) {
+        if (std.mem.eql(u8, args[i], "--lib") and i + 1 < args.len) {
+            lib_override = args[i + 1];
+            i += 1;
+        }
+    }
+
+    const cwd = std.Io.Dir.cwd();
+
+    // Snapshot existing dep keys so we can identify the new one after fetch.
+    const zon_before = cwd.readFileAlloc(io, "build.zig.zon", allocator, .unlimited) catch "";
+    defer if (zon_before.len > 0) allocator.free(zon_before);
+    const deps_before = try parseZonDeps(allocator, zon_before);
+    defer freeDeps(allocator, deps_before);
+
+    // Run zig fetch --save (handles fingerprint insertion automatically).
+    try execZig(io, allocator, &.{ "zig", "fetch", "--save", url });
+
+    // Find the newly added dep key by diffing before vs after.
+    const zon_after = cwd.readFileAlloc(io, "build.zig.zon", allocator, .unlimited) catch {
+        std.debug.print("warning: could not re-read build.zig.zon to auto-link.\n", .{});
+        return;
+    };
+    defer allocator.free(zon_after);
+    const deps_after = try parseZonDeps(allocator, zon_after);
+    defer freeDeps(allocator, deps_after);
+
+    var new_key: ?[]const u8 = null;
+    outer: for (deps_after) |after| {
+        for (deps_before) |before| {
+            if (std.mem.eql(u8, before.key, after.key)) continue :outer;
+        }
+        new_key = after.key;
+        break;
+    }
+
+    const key = new_key orelse {
+        std.debug.print("Dependency added.  Could not detect new key; edit build.zig manually.\n", .{});
+        return;
+    };
+    const lib = lib_override orelse key; // default: artifact name == dep key
+
+    // Insert the linking boilerplate into build.zig.
+    const build_zig = cwd.readFileAlloc(io, "build.zig", allocator, .unlimited) catch {
+        std.debug.print("warning: could not read build.zig to auto-link.\n", .{});
+        return;
+    };
+    defer allocator.free(build_zig);
+
+    const updated = try insertBuildLink(allocator, build_zig, key, lib);
+    defer allocator.free(updated);
+    try cwd.writeFile(io, .{ .sub_path = "build.zig", .data = updated });
+
+    std.debug.print("Added '{s}' and linked in build.zig.\n", .{key});
+    std.debug.print("  artifact: {s}_dep.artifact(\"{s}\")\n", .{ key, lib });
+    std.debug.print("  override artifact name with: zig-c add <url> --lib <name>\n", .{});
+}
+
+fn cmdRemove(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
+    if (args.len == 0) {
+        std.debug.print("error: missing dependency name\nUsage: zig-c remove <name>\n", .{});
+        return error.MissingArgument;
+    }
+    const key = args[0];
+    const cwd = std.Io.Dir.cwd();
+
+    // Remove from build.zig.zon.
+    const zon = try cwd.readFileAlloc(io, "build.zig.zon", allocator, .unlimited);
+    defer allocator.free(zon);
+    const new_zon = removeZonDep(allocator, zon, key) catch |err| {
+        if (err == error.DepNotFound) {
+            std.debug.print("error: '{s}' not found in build.zig.zon\n", .{key});
+        }
+        return err;
+    };
+    defer allocator.free(new_zon);
+    try cwd.writeFile(io, .{ .sub_path = "build.zig.zon", .data = new_zon });
+
+    // Remove from build.zig.
+    const build_zig = cwd.readFileAlloc(io, "build.zig", allocator, .unlimited) catch {
+        std.debug.print("Removed '{s}' from build.zig.zon.\n", .{key});
+        std.debug.print("warning: could not update build.zig — remove the linking code manually.\n", .{});
+        return;
+    };
+    defer allocator.free(build_zig);
+    const new_build_zig = try removeBuildLink(allocator, build_zig, key);
+    defer allocator.free(new_build_zig);
+    try cwd.writeFile(io, .{ .sub_path = "build.zig", .data = new_build_zig });
+
+    std.debug.print("Removed '{s}' from build.zig.zon and build.zig.\n", .{key});
+}
+
+fn cmdList(io: std.Io, allocator: std.mem.Allocator) !void {
+    const cwd = std.Io.Dir.cwd();
+    const zon = cwd.readFileAlloc(io, "build.zig.zon", allocator, .unlimited) catch {
+        std.debug.print("error: no build.zig.zon found — are you inside a zig-c project?\n", .{});
+        return error.NoManifest;
+    };
+    defer allocator.free(zon);
+
+    const deps = try parseZonDeps(allocator, zon);
+    defer freeDeps(allocator, deps);
+
+    if (deps.len == 0) {
+        std.debug.print("No dependencies.\n", .{});
+        return;
+    }
+    std.debug.print("{d} dependenc{s}:\n", .{ deps.len, if (deps.len == 1) "y" else "ies" });
+    for (deps) |dep| {
+        if (dep.url.len > 0) {
+            std.debug.print("  {s}\n    {s}\n", .{ dep.key, dep.url });
+        } else {
+            std.debug.print("  {s}\n", .{dep.key});
+        }
+    }
 }
 
 fn cmdBuild(io: std.Io, allocator: std.mem.Allocator) !void {
@@ -294,6 +556,10 @@ pub fn main(init: std.process.Init) !void {
         try cmdInit(io, allocator, rest);
     } else if (std.mem.eql(u8, cmd, "add")) {
         try cmdAdd(io, allocator, rest);
+    } else if (std.mem.eql(u8, cmd, "remove") or std.mem.eql(u8, cmd, "rm")) {
+        try cmdRemove(io, allocator, rest);
+    } else if (std.mem.eql(u8, cmd, "list") or std.mem.eql(u8, cmd, "ls")) {
+        try cmdList(io, allocator);
     } else if (std.mem.eql(u8, cmd, "build")) {
         try cmdBuild(io, allocator);
     } else if (std.mem.eql(u8, cmd, "run")) {

@@ -130,7 +130,104 @@ test "replaceAll: entire string replaced" {
     try std.testing.expectEqualStrings("xyz", out);
 }
 
-// ── Integration: zig-c init ───────────────────────────────────────────────────
+// ── Unit tests: package management helpers ─────────────────────────────────────
+
+const zon_fixture =
+    \\.{
+    \\    .name = .myapp,
+    \\    .version = "0.1.0",
+    \\    .minimum_zig_version = "0.16.0",
+    \\    .paths = .{ "build.zig", "build.zig.zon", "src" },
+    \\    .dependencies = .{
+    \\        .lz4 = .{
+    \\            .url = "git+https://example.com/lz4.git#abc",
+    \\            .hash = "lz4-1.0-abc",
+    \\        },
+    \\        .zstd = .{
+    \\            .url = "git+https://example.com/zstd.git#def",
+    \\            .hash = "zstd-1.0-def",
+    \\        },
+    \\    },
+    \\}
+    \\
+;
+
+test "parseZonDeps: empty dependencies" {
+    const zon =
+        \\.{ .name = .foo, .dependencies = .{} }
+    ;
+    const deps = try main.parseZonDeps(gpa, zon);
+    defer { for (deps) |d| { gpa.free(d.key); gpa.free(d.url); } gpa.free(deps); }
+    try std.testing.expectEqual(@as(usize, 0), deps.len);
+}
+
+test "parseZonDeps: two entries" {
+    const deps = try main.parseZonDeps(gpa, zon_fixture);
+    defer { for (deps) |d| { gpa.free(d.key); gpa.free(d.url); } gpa.free(deps); }
+    try std.testing.expectEqual(@as(usize, 2), deps.len);
+    try std.testing.expectEqualStrings("lz4", deps[0].key);
+    try std.testing.expectEqualStrings("git+https://example.com/lz4.git#abc", deps[0].url);
+    try std.testing.expectEqualStrings("zstd", deps[1].key);
+}
+
+test "parseZonDeps: no .dependencies block" {
+    const zon = ".{ .name = .foo }";
+    const deps = try main.parseZonDeps(gpa, zon);
+    defer { for (deps) |d| { gpa.free(d.key); gpa.free(d.url); } gpa.free(deps); }
+    try std.testing.expectEqual(@as(usize, 0), deps.len);
+}
+
+const build_zig_fixture =
+    \\const std = @import("std");
+    \\pub fn build(b: *std.Build) void {
+    \\    const target = b.standardTargetOptions(.{});
+    \\    const optimize = b.standardOptimizeOption(.{});
+    \\    const mod = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true });
+    \\    const exe = b.addExecutable(.{ .name = "myapp", .root_module = mod });
+    \\    b.installArtifact(exe);
+    \\}
+    \\
+;
+
+test "insertBuildLink: injects dependency before exe" {
+    const updated = try main.insertBuildLink(gpa, build_zig_fixture, "lz4", "lz4");
+    defer gpa.free(updated);
+    try std.testing.expect(std.mem.indexOf(u8, updated, "lz4_dep") != null);
+    try std.testing.expect(std.mem.indexOf(u8, updated, "b.dependency(\"lz4\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, updated, "mod.linkLibrary") != null);
+    // Linking code must appear BEFORE the exe declaration.
+    const link_pos = std.mem.indexOf(u8, updated, "lz4_dep").?;
+    const exe_pos = std.mem.indexOf(u8, updated, "b.addExecutable").?;
+    try std.testing.expect(link_pos < exe_pos);
+}
+
+test "insertBuildLink: idempotent (no double-insert)" {
+    const once = try main.insertBuildLink(gpa, build_zig_fixture, "lz4", "lz4");
+    defer gpa.free(once);
+    const twice = try main.insertBuildLink(gpa, once, "lz4", "lz4");
+    defer gpa.free(twice);
+    const count1 = std.mem.count(u8, once, "lz4_dep");
+    const count2 = std.mem.count(u8, twice, "lz4_dep");
+    try std.testing.expectEqual(count1, count2);
+}
+
+test "insertBuildLink: custom lib name" {
+    const updated = try main.insertBuildLink(gpa, build_zig_fixture, "mypkg", "mylib");
+    defer gpa.free(updated);
+    try std.testing.expect(std.mem.indexOf(u8, updated, "mypkg_dep.artifact(\"mylib\")") != null);
+}
+
+test "removeBuildLink: removes dep lines" {
+    const with_link = try main.insertBuildLink(gpa, build_zig_fixture, "lz4", "lz4");
+    defer gpa.free(with_link);
+    const removed = try main.removeBuildLink(gpa, with_link, "lz4");
+    defer gpa.free(removed);
+    try std.testing.expect(std.mem.indexOf(u8, removed, "lz4_dep") == null);
+    // Everything else should still be present.
+    try std.testing.expect(std.mem.indexOf(u8, removed, "b.addExecutable") != null);
+}
+
+// ── Integration: zig-c init ───────────────────────────────────────────────
 
 test "init: creates all expected files with correct content" {
     var tmp = std.testing.tmpDir(.{});
@@ -385,7 +482,62 @@ test "clean on a fresh project (no artifacts) succeeds" {
     try ok(r);
 }
 
-// ── Integration: error cases ──────────────────────────────────────────────────
+// ── Integration: list + remove ───────────────────────────────────────────────────
+
+test "list: no dependencies shows empty message" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "noeps" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    var proj = try tmp.dir.openDir(io, "noeps", .{});
+    defer proj.close(io);
+
+    const r = try runIn(proj, &.{ zig_c_path, "list" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try ok(r);
+    try stderrContains(r, "No dependencies");
+}
+
+test "remove: error when dep does not exist" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "noremove" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    var proj = try tmp.dir.openDir(io, "noremove", .{});
+    defer proj.close(io);
+
+    const r = try runIn(proj, &.{ zig_c_path, "remove", "nonexistent" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try fail(r);
+    try stderrContains(r, "not found");
+}
+
+test "remove: missing name argument exits non-zero" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const r = try runIn(tmp.dir, &.{ zig_c_path, "remove" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try fail(r);
+    try stderrContains(r, "missing dependency name");
+}
+
+// ── Integration: error cases ────────────────────────────────────────────────────
 
 test "add: missing URL argument exits non-zero" {
     var tmp = std.testing.tmpDir(.{});
