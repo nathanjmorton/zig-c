@@ -7,9 +7,10 @@ const usage =
     \\
     \\Usage:
     \\  zigc init   <name>          Create a new C project in ./<name>/
-    \\  zigc add    <url> [--lib n] Add and auto-link a dependency
+    \\  zigc add    <name|url> [--lib n]  Add a dependency (registry name or URL)
     \\  zigc remove <name>          Remove a dependency
     \\  zigc list                   List installed dependencies
+    \\  zigc registry update        Fetch the latest package registry
     \\  zigc check  [--build]       Verify project integrity
     \\  zigc verify [--symbols]     Inspect object files and symbols
     \\  zigc build  [flags]         Build the current project  (zig build)
@@ -173,6 +174,96 @@ pub fn parseBuildDeps(allocator: std.mem.Allocator, build_zig: []const u8) ![][]
     return keys.toOwnedSlice(allocator);
 }
 
+// ── Registry types + helpers ─────────────────────────────────────────────────
+
+const REGISTRY_URL = "https://raw.githubusercontent.com/nathanjmorton/zig-c/main/registry.json";
+
+pub const RegistryEntry = struct {
+    url: []const u8,
+    hash: []const u8,
+    lib: []const u8,
+};
+
+/// Load the local registry cache (~/.zigc/registry.json) and look up `name`.
+/// Returns null if the file doesn't exist or `name` isn't in it.
+pub fn registryLookup(allocator: std.mem.Allocator, io: std.Io, name: []const u8) ?RegistryEntry {
+    const home = std.mem.sliceTo(std.c.getenv("HOME") orelse return null, 0);
+    const path = std.fmt.allocPrint(allocator, "{s}/.zigc/registry.json", .{home}) catch return null;
+    defer allocator.free(path);
+    const cwd = std.Io.Dir.cwd();
+    const data = cwd.readFileAlloc(io, path, allocator, .unlimited) catch return null;
+    defer allocator.free(data);
+    return registryLookupFromJson(data, name);
+}
+
+/// Look up `name` in raw JSON registry content. Returns null if not found.
+pub fn registryLookupFromJson(data: []const u8, name: []const u8) ?RegistryEntry {
+    // Manual extraction: find `"name"` key, then extract url/hash/lib strings.
+    // This avoids std.json allocator requirements and keeps it simple.
+    const needle_open = findJsonKey(data, name) orelse return null;
+    // needle_open points to the '{' of the entry object.
+    const block_end = findMatchingBrace(data, needle_open) orelse return null;
+    const block = data[needle_open .. block_end + 1];
+    return RegistryEntry{
+        .url = extractJsonString(block, "url") orelse return null,
+        .hash = extractJsonString(block, "hash") orelse return null,
+        .lib = extractJsonString(block, "lib") orelse return null,
+    };
+}
+
+/// Find the position of '{' for the value of a given top-level key in JSON.
+fn findJsonKey(data: []const u8, key: []const u8) ?usize {
+    var pos: usize = 0;
+    while (pos < data.len) {
+        // Find next '"'
+        const q1 = std.mem.indexOfScalarPos(u8, data, pos, '"') orelse return null;
+        const ks = q1 + 1;
+        const q2 = std.mem.indexOfScalarPos(u8, data, ks, '"') orelse return null;
+        const found_key = data[ks..q2];
+        pos = q2 + 1;
+        if (std.mem.eql(u8, found_key, key)) {
+            // Skip to the '{' after the colon.
+            const brace = std.mem.indexOfScalarPos(u8, data, pos, '{') orelse return null;
+            return brace;
+        }
+    }
+    return null;
+}
+
+/// Find the matching '}' for a '{' at `start`.
+fn findMatchingBrace(data: []const u8, start: usize) ?usize {
+    var depth: usize = 0;
+    var i = start;
+    while (i < data.len) : (i += 1) {
+        if (data[i] == '{') depth += 1
+        else if (data[i] == '}') {
+            depth -= 1;
+            if (depth == 0) return i;
+        }
+    }
+    return null;
+}
+
+/// Extract the string value for a given key inside a JSON object fragment.
+fn extractJsonString(block: []const u8, key: []const u8) ?[]const u8 {
+    var pos: usize = 0;
+    while (pos < block.len) {
+        const q1 = std.mem.indexOfScalarPos(u8, block, pos, '"') orelse return null;
+        const ks = q1 + 1;
+        const q2 = std.mem.indexOfScalarPos(u8, block, ks, '"') orelse return null;
+        const found_key = block[ks..q2];
+        pos = q2 + 1;
+        if (std.mem.eql(u8, found_key, key)) {
+            // Next quoted string is the value.
+            const v1 = std.mem.indexOfScalarPos(u8, block, pos, '"') orelse return null;
+            const vs = v1 + 1;
+            const v2 = std.mem.indexOfScalarPos(u8, block, vs, '"') orelse return null;
+            return block[vs..v2];
+        }
+    }
+    return null;
+}
+
 // ── Package management types + helpers ───────────────────────────────────────
 
 /// One entry from the .dependencies table in build.zig.zon.
@@ -304,6 +395,33 @@ pub fn insertBuildLink(allocator: std.mem.Allocator, build_zig: []const u8, key:
     defer allocator.free(snippet);
 
     return std.mem.concat(allocator, u8, &.{ build_zig[0..ins], snippet, build_zig[ins..] });
+}
+
+/// Insert a dependency entry directly into build.zig.zon content (no zig fetch).
+/// The new block looks like:
+///     .key = .{
+///         .url = "...",
+///         .hash = "...",
+///     },
+pub fn insertZonDep(allocator: std.mem.Allocator, zon: []const u8, key: []const u8, url: []const u8, hash: []const u8) ![]u8 {
+    // Idempotency: if the key already exists, return a copy.
+    const pattern = try std.fmt.allocPrint(allocator, ".{s} = .", .{key});
+    defer allocator.free(pattern);
+    if (std.mem.indexOf(u8, zon, pattern) != null) return allocator.dupe(u8, zon);
+
+    const DEPS_OPEN = ".dependencies = .{";
+    const deps_pos = std.mem.indexOf(u8, zon, DEPS_OPEN) orelse return allocator.dupe(u8, zon);
+    const insert_at = deps_pos + DEPS_OPEN.len;
+
+    const snippet = try std.fmt.allocPrint(allocator,
+        \\\n        .{s} = .{{
+        \\            .url = "{s}",
+        \\            .hash = "{s}",
+        \\        }},
+    , .{ key, url, hash });
+    defer allocator.free(snippet);
+
+    return std.mem.concat(allocator, u8, &.{ zon[0..insert_at], snippet, zon[insert_at..] });
 }
 
 /// Remove all lines referencing `<key>_dep` from build.zig content.
@@ -475,10 +593,10 @@ fn insertFingerprint(io: std.Io, allocator: std.mem.Allocator, fp_str: []const u
 
 fn cmdAdd(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len == 0) {
-        std.debug.print("error: missing package URL\nUsage: zigc add <url> [--lib <lib-name>]\n", .{});
+        std.debug.print("error: missing package name or URL\nUsage: zigc add <name|url> [--lib <lib-name>]\n", .{});
         return error.MissingArgument;
     }
-    const url = args[0];
+    const target = args[0];
 
     // Optional --lib <name> overrides the artifact name (defaults to dep key).
     var lib_override: ?[]const u8 = null;
@@ -490,6 +608,49 @@ fn cmdAdd(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !v
         }
     }
 
+    // Determine if this is a URL or a friendly registry name.
+    const is_url = std.mem.indexOf(u8, target, "://") != null or std.mem.startsWith(u8, target, "git+");
+
+    if (!is_url) {
+        // ── Registry-based add ────────────────────────────────────────────
+        const entry = registryLookup(allocator, io, target) orelse {
+            std.debug.print("error: '{s}' not found in registry\n", .{target});
+            std.debug.print("  Run 'zigc registry update' to refresh, or pass a full URL.\n", .{});
+            return error.RegistryMiss;
+        };
+        const key = target;
+        const lib = lib_override orelse entry.lib;
+
+        const cwd = std.Io.Dir.cwd();
+
+        // Insert dep into build.zig.zon directly (we already have the hash).
+        const zon = cwd.readFileAlloc(io, "build.zig.zon", allocator, .unlimited) catch {
+            std.debug.print("error: no build.zig.zon found — are you inside a zigc project?\n", .{});
+            return error.NoManifest;
+        };
+        defer allocator.free(zon);
+        const new_zon = try insertZonDep(allocator, zon, key, entry.url, entry.hash);
+        defer allocator.free(new_zon);
+        try cwd.writeFile(io, .{ .sub_path = "build.zig.zon", .data = new_zon });
+
+        // Insert linking boilerplate into build.zig.
+        const build_zig = cwd.readFileAlloc(io, "build.zig", allocator, .unlimited) catch {
+            std.debug.print("Added '{s}' to build.zig.zon.\n", .{key});
+            std.debug.print("warning: could not read build.zig to auto-link.\n", .{});
+            return;
+        };
+        defer allocator.free(build_zig);
+        const updated = try insertBuildLink(allocator, build_zig, key, lib);
+        defer allocator.free(updated);
+        try cwd.writeFile(io, .{ .sub_path = "build.zig", .data = updated });
+
+        std.debug.print("Added '{s}' from registry and linked in build.zig.\n", .{key});
+        std.debug.print("  artifact: {s}_dep.artifact(\"{s}\")\n", .{ key, lib });
+        return;
+    }
+
+    // ── URL-based add (original flow) ────────────────────────────────────
+    const url = target;
     const cwd = std.Io.Dir.cwd();
 
     // Snapshot existing dep keys so we can identify the new one after fetch.
@@ -1037,6 +1198,61 @@ fn cmdRun(io: std.Io, allocator: std.mem.Allocator, extra: []const []const u8) !
     try execZig(io, allocator, argv);
 }
 
+fn cmdRegistryUpdate(io: std.Io, allocator: std.mem.Allocator) !void {
+    const home_ptr = std.c.getenv("HOME") orelse {
+        std.debug.print("error: HOME not set\n", .{});
+        return error.NoHome;
+    };
+    const home = std.mem.sliceTo(home_ptr, 0);
+    const dir_path = try std.fmt.allocPrint(allocator, "{s}/.zigc", .{home});
+    defer allocator.free(dir_path);
+    const file_path = try std.fmt.allocPrint(allocator, "{s}/.zigc/registry.json", .{home});
+    defer allocator.free(file_path);
+
+    // Create ~/.zigc/ if needed.
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(io, dir_path, .default_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+
+    // Fetch registry.json from remote using curl.
+    std.debug.print("Fetching registry from {s}...\n", .{REGISTRY_URL});
+    const result = try std.process.run(allocator, io, .{
+        .argv = &.{ "curl", "-sfL", "-o", file_path, REGISTRY_URL },
+    });
+    defer allocator.free(result.stdout);
+    defer allocator.free(result.stderr);
+
+    const ok = switch (result.term) {
+        .exited => |c| c == 0,
+        else => false,
+    };
+    if (!ok) {
+        std.debug.print("error: failed to fetch registry\n", .{});
+        if (result.stderr.len > 0) std.debug.print("{s}", .{result.stderr});
+        return error.FetchFailed;
+    }
+
+    // Count entries in the downloaded file.
+    const data = cwd.readFileAlloc(io, file_path, allocator, .unlimited) catch {
+        std.debug.print("Registry saved to {s}\n", .{file_path});
+        return;
+    };
+    defer allocator.free(data);
+    // Quick count: number of top-level keys (count '"key": {' patterns).
+    var n_entries: usize = 0;
+    var pos: usize = 0;
+    while (pos < data.len) {
+        const q = std.mem.indexOfScalarPos(u8, data, pos, '{') orelse break;
+        pos = q + 1;
+        n_entries += 1;
+    }
+    if (n_entries > 0) n_entries -= 1; // subtract the outer object brace
+    std.debug.print("Registry updated: {d} package{s} cached in {s}\n", .{
+        n_entries, if (n_entries == 1) "" else "s", file_path,
+    });
+}
+
 fn cmdClean(io: std.Io) !void {
     const cwd = std.Io.Dir.cwd();
     for ([_][]const u8{ ".zig-cache", "zig-out" }) |path| {
@@ -1084,6 +1300,13 @@ pub fn main(init: std.process.Init) !void {
         try cmdBuild(io, allocator, rest);
     } else if (std.mem.eql(u8, cmd, "run")) {
         try cmdRun(io, allocator, rest);
+    } else if (std.mem.eql(u8, cmd, "registry")) {
+        if (rest.len > 0 and std.mem.eql(u8, rest[0], "update")) {
+            try cmdRegistryUpdate(io, allocator);
+        } else {
+            std.debug.print("Usage: zigc registry update\n", .{});
+            return error.MissingArgument;
+        }
     } else if (std.mem.eql(u8, cmd, "clean")) {
         try cmdClean(io);
     } else if (std.mem.eql(u8, cmd, "help") or

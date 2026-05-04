@@ -303,6 +303,63 @@ test "buildArgv: no extra flags returns base unchanged" {
     try std.testing.expectEqual(@as(usize, 2), argv.len);
 }
 
+// ── Unit tests: registry lookup ──────────────────────────────────────────────
+
+const registry_json =
+    \\{
+    \\  "lz4": {
+    \\    "url": "git+https://github.com/allyourcodebase/lz4.git?ref=1.10.0-6#abc123",
+    \\    "hash": "lz4-1.10.0-6-ewyzw-fakehash",
+    \\    "lib": "lz4"
+    \\  },
+    \\  "sqlite": {
+    \\    "url": "git+https://github.com/allyourcodebase/sqlite.git?ref=3.49.1#def456",
+    \\    "hash": "sqlite-3.49.1-fakehash",
+    \\    "lib": "sqlite"
+    \\  }
+    \\}
+;
+
+test "registryLookupFromJson: finds existing entry" {
+    const entry = main.registryLookupFromJson(registry_json, "lz4") orelse
+        return error.ExpectedEntry;
+    try std.testing.expectEqualStrings("git+https://github.com/allyourcodebase/lz4.git?ref=1.10.0-6#abc123", entry.url);
+    try std.testing.expectEqualStrings("lz4-1.10.0-6-ewyzw-fakehash", entry.hash);
+    try std.testing.expectEqualStrings("lz4", entry.lib);
+}
+
+test "registryLookupFromJson: finds second entry" {
+    const entry = main.registryLookupFromJson(registry_json, "sqlite") orelse
+        return error.ExpectedEntry;
+    try std.testing.expectEqualStrings("sqlite", entry.lib);
+    try std.testing.expectEqualStrings("sqlite-3.49.1-fakehash", entry.hash);
+}
+
+test "registryLookupFromJson: returns null for missing key" {
+    const entry = main.registryLookupFromJson(registry_json, "nonexistent");
+    try std.testing.expect(entry == null);
+}
+
+// ── Unit tests: insertZonDep ──────────────────────────────────────────────────
+
+test "insertZonDep: inserts new dep into empty dependencies" {
+    const zon = ".{ .name = .foo, .dependencies = .{} }";
+    const result = try main.insertZonDep(gpa, zon, "lz4", "git+https://example.com/lz4.git#abc", "lz4-hash");
+    defer gpa.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, ".lz4 = .{") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, ".url = \"git+https://example.com/lz4.git#abc\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, ".hash = \"lz4-hash\"") != null);
+}
+
+test "insertZonDep: idempotent (no double-insert)" {
+    const zon = ".{ .name = .foo, .dependencies = .{} }";
+    const once = try main.insertZonDep(gpa, zon, "lz4", "url", "hash");
+    defer gpa.free(once);
+    const twice = try main.insertZonDep(gpa, once, "lz4", "url", "hash");
+    defer gpa.free(twice);
+    try std.testing.expectEqualStrings(once, twice);
+}
+
 // ── Unit tests: package management helpers ─────────────────────────────────────
 
 const zon_fixture =
@@ -888,7 +945,7 @@ test "add: missing URL argument exits non-zero" {
     defer gpa.free(r.stdout);
     defer gpa.free(r.stderr);
     try fail(r);
-    try stderrContains(r, "missing package URL");
+    try stderrContains(r, "missing package name or URL");
 }
 
 test "unknown command: exits non-zero and prints usage" {
