@@ -2,31 +2,46 @@
 
 A C project and package manager built on top of [Zig's build system](https://ziglang.org/learn/build-system/).
 
-`zigc` wraps `zig build` and `zig fetch` to give you a clean CLI for creating C projects, managing dependencies from the [allyourcodebase](https://github.com/allyourcodebase) ecosystem, and verifying project integrity — all without writing build scripts by hand.
+`zigc` handles scaffolding, dependency management, build orchestration, integrity checking, and binary symbol inspection — all without writing a build script by hand.
 
 **Requires Zig 0.16.0.**
 
 ---
 
-## Installation
+## Project structure
 
-```sh
-git clone https://github.com/nathanjmorton/zig-c
-cd zig-c
-zig build -Doptimize=ReleaseFast
+```
+zig-c/
+├── src/
+│   ├── main.zig      # All commands, parsers, and integrity helpers (~1 000 lines)
+│   └── tests.zig     # 45 tests: unit (pure functions) + integration (full CLI)
+├── build.zig         # Zig build script for zigc itself
+├── build.zig.zon     # Package manifest (depends on lz4 for the hello.c demo)
+├── hello.c           # lz4 compression demo — proves the package pipeline works
+└── README.md
 ```
 
-The binary lands at `zig-out/bin/zigc`. Add it to your `PATH`:
+### Inside `src/main.zig`
 
-```sh
-export PATH="$PWD/zig-out/bin:$PATH"
-```
+| Symbol | Role |
+|---|---|
+| `Check` struct | Accumulates ✓ / ! / ✗ results; shared by `check` and `verify` |
+| `Dependency` struct | `{ key, url }` pair parsed from `build.zig.zon` |
+| `p| `p| `p| `p| `p| `p| `p| `p| `p| `p| `p| `p| `p| `p| `p| `p| `p| `p| `p| `p| `p| ` | Extracts quoted strings from `.paths = .{…}` |
+| `parseBuildDeps` | Collects (deduplicated) `b.dependency("key")` calls from `build.zig` |
+| `insertBuildLink` | Injects `b.dependency` + `mod.lin| `insertBuildLink` | Iecutable` (idempotent) |
+| `removeBuildLink` | Strips linking lines matching `<key>_dep` |
+| `removeZonDep` | Removes a named dep block from `build.zig.zon` |
+| `insertFingerprint` | Appends `.fingerprint` before the closing `}` |
+| `exe| `exe| `exe| `exe| `exe| `exe| `exe| `exe| `exe| `exe| `exe|nt and retries |
+| `cmdInit` … `cmdVerify` | Nine command handlers |
 
 ---
 
-## Workflow
+## Install## Install## Install## Install## Install## Install## Install## Install## Instald -Doptimize=ReleaseFast
+```
 
-A complete example from project creation through adding a C library dependency and running the result.
+The binary lands at `zig-out/bin/zigc`. Add it to your `PATHThe binary lands at `zig-out/bin/zigc`. Add it to your `PATHThe binary lands at `zigmple: create a project, add a C library, inspect the build, verify it.
 
 ### 1 — Create a project
 
@@ -35,14 +50,12 @@ zigc init my-app
 cd my-app
 ```
 
-This scaffolds:
+Scaffolds:
 
 ```
 my-app/
   src/main.c        # hello-world entry point
-  build.zig         # Zig build script (auto-generated, ready to edit)
-  build.zig.zon     # package manifest (name, version, deps)
-  .gitignore
+  build.  build.  build.  build.  build.  build.  build.  build.  build.  build.  build.  build.  re
 ```
 
 ### 2 — Build and run
@@ -58,10 +71,7 @@ Hello from my-app!
 
 ### 3 — Add a dependency
 
-Dependencies are pulled from any URL that `zig fetch` understands — typically a tagged release from [allyourcodebase](https://github.com/allyourcodebase).
-
-```sh
-zigc add git+https://github.com/allyourcodebase/lz4.git#1.10.0-6
+Dependencies are pulled from any URL `zig fetch` understands — typically a tagged release from [allyourcodebaseDependencies are pulled from any URL `zig fetch` understands — typically a taggyourcodebase/lz4.git#1.10.0-6
 ```
 
 ```
@@ -80,34 +90,7 @@ const lz4_dep = b.dependency("lz4", .{ .target = target, .optimize = optimize })
 mod.linkLibrary(lz4_dep.artifact("lz4"));
 ```
 
-Now edit `src/main.c` to use the library:
-
-```c
-#include <stdio.h>
-#include <string.h>
-#include <lz4.h>
-
-int main(void) {
-    const char *src = "Hello, compressed world!";
-    int src_len = (int)strlen(src) + 1;
-    char buf[256];
-
-    int n = LZ4_compress_default(src, buf, src_len, (int)sizeof(buf));
-    printf("Compressed %d bytes \u2192 %d bytes\n", src_len, n);
-    return 0;
-}
-```
-
-```sh
-zigc build
-zigc run
-```
-
-```
-Compressed 25 bytes → 26 bytes
-```
-
-### 4 — Inspect and manage dependencies
+### 4 — Inspect dependencies
 
 ```sh
 zigc list
@@ -119,7 +102,7 @@ zigc list
     git+https://github.com/allyourcodebase/lz4.git?ref=1.10.0-6#41f52a...
 ```
 
-Remove a dependency (strips it from `build.zig.zon` **and** removes the linking lines from `build.zig`):
+Remove a dependency (strips it from `build.zig.zon` **and** the linking lines from `build.zig`):
 
 ```sh
 zigc remove lz4
@@ -129,22 +112,7 @@ zigc remove lz4
 
 ```sh
 zigc check
-```
-
-```
-zigc check
-
-Required files:
-  ✓ build.zig found
-  ✓ build.zig.zon found
-
-build.zig:
-  ✓ pub fn build(b: *std.Build) declared
-
-build.zig.zon fields:
-  ✓ .name is set
-  ✓ .version is set
-  ✓ .minimum_zig_version is set
+````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````ersion is set
   ✓ .fingerprint is set
 
 .paths entries:
@@ -152,10 +120,7 @@ build.zig.zon fields:
   ✓ 'build.zig.zon' exists on disk
   ✓ 'src' exists on disk
 
-Dependency consistency:
-  ✓ dep 'lz4' declared in zon is linked in build.zig
-
-10 ok, 0 warnings, 0 errors
+DependeDependeDependeDependeDependeDependeDependeDependeDependeDependeDependeDepe0 ok, 0 warnings, 0 errors
 ```
 
 Pass `--build` to also compile:
@@ -164,7 +129,32 @@ Pass `--build` to also compile:
 zigc check --build
 ```
 
-### 6 — Clean build artifacts
+### 6 — Inspect object files and symbols
+
+After building, `zigc verify` confirms the compilation produced valid artifacts:
+
+```sh
+zigzigzigzigzigzigzigzigzigzigzi
+
+Compiled libraries (.zig-cCompiled lib liblz4.a  (0.6 MB)  — dep 'lz4'
+
+Binary artifacts (zig-out/bin):
+  ✓ 'my-app' —   ✓ 'my-app' —   ✓ 'my-app' —   ✓ 'my-app' —   ✓ 'my-app' —   ✓ 'my-app' — ned
+  ✓ 14 defined symbols,  8 undefined (OS / libc calls)
+
+Dependency symbols:
+  ✓ dep 'lz4' — 38 symbols compiled in  (e.g. lz4_open, lz4_exec…)
+
+5 ok, 0 warnings, 0 errors
+```
+
+Pass `--symbols` to print the first 50 defined symbols with type codes (`T`=code, `D`=data):
+
+```sh
+zigc verify --symbols
+```
+
+### 7 ### 7 ### 7 ### 7 ### 7 s
 
 ```sh
 zigc clean        # removes .zig-cache/ and zig-out/
@@ -174,56 +164,31 @@ zigc clean        # removes .zig-cache/ and zig-out/
 
 ## Command reference
 
-| Command | Description |
-|---|---|
-| `zigc init <name>` | Scaffold a new C project in `./<name>/` |
-| `zigc add <url> [--lib <name>]` | Fetch a dependency and auto-link it in `build.zig` |
-| `zigc remove <name>` | Remove a dependency from the manifest and `build.zig` |
-| `zigc list` | Show all declared dependencies and their pinned URLs |
-| `zigc check [--build]` | Verify manifest, paths, and dep consistency; optionally compile |
-| `zigc build` | Compile the project (`zig build`) |
-| `zigc run` | Compile and run (`zig build run`) |
+| Command | Description| Command | Description| Command | Description| Command | Description| Command | Description| Command | Deme>]` | Fetch a dependency and auto-link| Coin `build.zig` |
+| `zigc r| `zigc r| `zigc r| `zigc r| `zigc r| `zithe| `zigc r| `zigc r| `zigc r| `zigc r| `zigc r| `zithe| `zigc r| `zigc r| `zigd their pin| `zigc r| `zigc r| `zigc r| `zld]` | Verify manifest fields, paths, and dep consistency |
+| `zigc verify [--symbols]` | Inspect compiled ob| `zigc verify [--symbols]` | Inspect compiled ob| `zigc verify [--symbols]` | Inspect compiled ob| `zigc verify [-- run (`zig build run`) |
 | `zigc clean` | Remove `.zig-cache/` and `zig-out/` |
-| `zigc help` | Print usage |
+| `zigc clean` | Remove `.zig-cache/` and `zig-out/` |
+c verify [--symbe
 
-### `zigc add` — artifact name override
-
-When the package's artifact name differs from its dep key (uncommon), use `--lib`:
-
-```sh
-zigc add git+https://github.com/allyourcodebase/grpc.git#master --lib grpc
-```
-
-### `zigc check` — what is verified
-
-| Check | Severity | Catches |
-|---|---|---|
-| `build.zig` exists | error | Missing build script |
-| `build.zig.zon` exists | error | Missing manifest |
-| `pub fn build(...)` declared | error | Malformed build script |
-| `.name`, `.version` set | error / warn | Incomplete manifest |
+When the package's artifact nameWhen the package's artifact nameWhen the package's artifact nameWhen the package's artifactllyourcodebase/grpc.git#master --libWhen the package's artifact na� what isWhen the package's artifact nameWhen the package's ---|
+| `buil| `buil| `buil| `buor | `buil| `buil| `buil| `buor | `buil| `buil| `buil| `buor | `buil| `buil| `buil| `buor | `buil| `buil| `buil| `buor | `buil| `buil| `buil| `buor | `buil| `buil| `buil| `buor | `buil| `builIncomplete manifest |
 | `.fingerprint` set | warn | Missing (auto-inserted by `zigc add`) |
 | All `.paths` entries on disk | error | Stale manifest entries |
 | Every zon dep linked in `build.zig` | warn | Declared but unused |
-| Every `b.dependency()` in `build.zig.zon` | error | Dangling reference (will fail at build time) |
-| `zig build` succeeds | error | Compilation errors (only with `--build`) |
+| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Every| Everyrify` — what is inspected
 
----
+| Layer | Tool | Checks |
+|---|---|---|
+| Object files (`.zig-cache`) | `find … lib*.a` | Static libraries exist; matche| Object files (`.zig-cache`) | `find … lib*.a` | Static libraries exist; matche| Object files (`.zig-cache`) | `find … lib*.a` | Static libraries exist; matche| Object files (`.zig-cache`) | `find … lib*.a` | Static libraries exist; matche| Objezi| Object files (`.zig-cache`) | `find … lib*.a` | Static libraries exist; matche| Object files (`.zig-cache`) | `find … lib*.a` | Static libraries exist; matche| Object files (`.zig-cache`) | `find … lib*.a` | Static libraries exipins dependency URLs and content hashes
 
-## How it works
+**`zigc add` flow:**
+1. Snapshot1. Snapshot1. Snapshot1. Snapshot1. Snapshot1. Snapshot1. Snsave <1. Snapshot1. Snapshot1. Snapshot1. Snapshot1. Snapshot1. Snapshotify the new dep key
+4. Insert `b.dependency(…)` + `mod.linkLibrary(…)` into `build.zig`
 
-`zigc` is a thin Zig CLI that generates and manipulates two files:
+**Fingerprint handling:** Zig 0.16.0 requires a `.fingerprint` field in `build.zig.zon`. `zigc` captures the suggested value from `zig fetch`'s stderr on first use and inserts it automatically.
 
-- **`build.zig`** — a Zig build script using Zig 0.16.0’s module API (`b.createModule`, `mod.addCSourceFiles`, `mod.linkLibrary`)
-- **`build.zig.zon`** — the package manifest that pins dependency URLs and content hashes
-
-When you run `zigc add`, it:
-1. Snapshots the existing deps in `build.zig.zon`
-2. Calls `zig fetch --save <url>` to resolve and pin the package
-3. Diffs before/after to identify the new dep key
-4. Writes the `b.dependency(…)` + `mod.linkLibrary(…)` boilerplate into `build.zig`
-
-The fingerprint in `build.zig.zon` is automatically inserted the first time `zigc add` (or `zigc build`) is called on a project that doesn’t have one yet.
+**Static linking:** `zigc add` links deps statically by default. `zigc verify` confirms this by checking that dep symbols (e.g. `sqlite3_`, `lz4_`) are present directly in the final binary.
 
 ---
 
