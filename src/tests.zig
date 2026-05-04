@@ -340,6 +340,68 @@ test "registryLookupFromJson: returns null for missing key" {
     try std.testing.expect(entry == null);
 }
 
+// ── Unit tests: extractJsonArrayField + extractJsonNestedField ─────────────
+
+test "extractJsonArrayField: extracts names from array of objects" {
+    const json = "[{\"name\":\"lz4\",\"id\":1},{\"name\":\"zlib\",\"id\":2}]";
+    const names = try main.extractJsonArrayField(gpa, json, "name");
+    defer { for (names) |n| gpa.free(n); gpa.free(names); }
+    try std.testing.expectEqual(@as(usize, 2), names.len);
+    try std.testing.expectEqualStrings("lz4", names[0]);
+    try std.testing.expectEqualStrings("zlib", names[1]);
+}
+
+test "extractJsonArrayField: empty array returns empty" {
+    const names = try main.extractJsonArrayField(gpa, "[]", "name");
+    defer gpa.free(names);
+    try std.testing.expectEqual(@as(usize, 0), names.len);
+}
+
+test "extractJsonNestedField: extracts nested sha" {
+    const json = "[{\"name\":\"v1.0\",\"commit\":{\"sha\":\"abc123\"}}]";
+    const sha = main.extractJsonNestedField(json, "commit", "sha") orelse
+        return error.ExpectedField;
+    try std.testing.expectEqualStrings("abc123", sha);
+}
+
+test "extractJsonNestedField: returns null when outer key missing" {
+    const json = "[{\"name\":\"v1.0\"}]";
+    const sha = main.extractJsonNestedField(json, "commit", "sha");
+    try std.testing.expect(sha == null);
+}
+
+// ── Unit tests: registry lookup → insertZonDep → insertBuildLink (end-to-end) ──
+
+test "registry lookup + inject: friendly name resolves and produces valid zon + build.zig" {
+    // 1. Look up "sqlite" in the test registry JSON.
+    const entry = main.registryLookupFromJson(registry_json, "sqlite") orelse
+        return error.ExpectedEntry;
+
+    // 2. Insert into build.zig.zon.
+    const zon = ".{ .name = .demo, .dependencies = .{} }";
+    const new_zon = try main.insertZonDep(gpa, zon, "sqlite", entry.url, entry.hash);
+    defer gpa.free(new_zon);
+
+    // Verify the zon contains the dep with correct url and hash.
+    try std.testing.expect(std.mem.indexOf(u8, new_zon, ".sqlite = .{") != null);
+    try std.testing.expect(std.mem.indexOf(u8, new_zon, entry.url) != null);
+    try std.testing.expect(std.mem.indexOf(u8, new_zon, entry.hash) != null);
+
+    // 3. Insert into build.zig.
+    const updated_build = try main.insertBuildLink(gpa, build_zig_fixture, "sqlite", entry.lib);
+    defer gpa.free(updated_build);
+
+    // Verify build.zig has the dependency and linkLibrary calls.
+    try std.testing.expect(std.mem.indexOf(u8, updated_build, "sqlite_dep") != null);
+    try std.testing.expect(std.mem.indexOf(u8, updated_build, "b.dependency(\"sqlite\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, updated_build, "sqlite_dep.artifact(\"sqlite\")") != null);
+
+    // Linking must appear before addExecutable.
+    const link_pos = std.mem.indexOf(u8, updated_build, "sqlite_dep").?;
+    const exe_pos = std.mem.indexOf(u8, updated_build, "b.addExecutable").?;
+    try std.testing.expect(link_pos < exe_pos);
+}
+
 // ── Unit tests: insertZonDep ──────────────────────────────────────────────────
 
 test "insertZonDep: inserts new dep into empty dependencies" {
