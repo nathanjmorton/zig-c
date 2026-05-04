@@ -3,10 +3,10 @@ const std = @import("std");
 // ── Usage ─────────────────────────────────────────────────────────────────────
 
 const usage =
-    \\zigc — C project build tool powered by the Zig build system
+    \\zigc — C/C++ project build tool powered by the Zig build system
     \\
     \\Usage:
-    \\  zigc init   <name>          Create a new C project in ./<name>/
+    \\  zigc init   <name> [--cpp]  Create a new C (or C++) project in ./<name>/
     \\  zigc add    <name|url> [--lib n]  Add a dependency (registry name or URL)
     \\  zigc remove <name>          Remove a dependency
     \\  zigc list                   List installed dependencies
@@ -87,6 +87,59 @@ const TMPL_MAIN_C =
     \\
     \\int main(void) {
     \\    printf("Hello from PROJ_NAME!\n");
+    \\    return 0;
+    \\}
+    \\
+;
+
+const TMPL_BUILD_ZIG_CPP =
+    \\const std = @import("std");
+    \\
+    \\pub fn build(b: *std.Build) void {
+    \\    const target = b.standardTargetOptions(.{});
+    \\    const optimize = b.standardOptimizeOption(.{});
+    \\
+    \\    const mod = b.createModule(.{
+    \\        .target = target,
+    \\        .optimize = optimize,
+    \\        .link_libcpp = true,
+    \\    });
+    \\
+    \\    // Base C++ flags.  Pass extra ones with -Dcflags=-DFOO,-Werror
+    \\    var cflags: std.ArrayList([]const u8) = .empty;
+    \\    cflags.appendSlice(b.allocator, &.{ "-std=c++17", "-Wall", "-Wextra" }) catch @panic("OOM");
+    \\    if (b.option([]const u8, "cflags", "Extra C++ flags (comma-separated)")) |extra| {
+    \\        var it = std.mem.tokenizeScalar(u8, extra, ',');
+    \\        while (it.next()) |f| cflags.append(b.allocator, f) catch @panic("OOM");
+    \\    }
+    \\    mod.addCSourceFiles(.{
+    \\        .root = b.path("src"),
+    \\        .files = &.{"main.cpp"},
+    \\        .flags = cflags.items,
+    \\    });
+    \\
+    \\    const exe = b.addExecutable(.{
+    \\        .name = "PROJ_NAME",
+    \\        .root_module = mod,
+    \\    });
+    \\    b.installArtifact(exe);
+    \\
+    \\    const run_cmd = b.addRunArtifact(exe);
+    \\    run_cmd.step.dependOn(b.getInstallStep());
+    \\    if (b.args) |args| run_cmd.addArgs(args);
+    \\    const run_step = b.step("run", "Build and run");
+    \\    run_step.dependOn(&run_cmd.step);
+    \\}
+    \\
+;
+
+const TMPL_MAIN_CPP =
+    \\#include <iostream>
+    \\#include <string>
+    \\
+    \\int main(int argc, char *argv[]) {
+    \\    const std::string name = (argc > 1) ? argv[1] : "PROJ_NAME";
+    \\    std::cout << "Hello from " << name << "!\n";
     \\    return 0;
     \\}
     \\
@@ -563,10 +616,26 @@ fn execZig(io: std.Io, allocator: std.mem.Allocator, argv: []const []const u8) !
 
 fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len == 0) {
-        std.debug.print("error: missing project name\nUsage: zigc init <name>\n", .{});
+        std.debug.print("error: missing project name\nUsage: zigc init <name> [--cpp]\n", .{});
         return error.MissingArgument;
     }
-    const name = args[0];
+
+    // Parse name and optional --cpp flag.
+    var name: []const u8 = undefined;
+    var cpp = false;
+    var got_name = false;
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--cpp")) {
+            cpp = true;
+        } else if (!got_name) {
+            name = arg;
+            got_name = true;
+        }
+    }
+    if (!got_name) {
+        std.debug.print("error: missing project name\nUsage: zigc init <name> [--cpp]\n", .{});
+        return error.MissingArgument;
+    }
 
     // Derive a valid Zig identifier (hyphens → underscores).
     const ident = try allocator.dupe(u8, name);
@@ -590,7 +659,8 @@ fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !
 
     // build.zig
     {
-        const content = try replaceAll(allocator, TMPL_BUILD_ZIG, "PROJ_NAME", name);
+        const tmpl = if (cpp) TMPL_BUILD_ZIG_CPP else TMPL_BUILD_ZIG;
+        const content = try replaceAll(allocator, tmpl, "PROJ_NAME", name);
         defer allocator.free(content);
         try dir.writeFile(io, .{ .sub_path = "build.zig", .data = content });
     }
@@ -602,23 +672,26 @@ fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !
         try dir.writeFile(io, .{ .sub_path = "build.zig.zon", .data = content });
     }
 
-    // src/main.c
+    // src/main.c or src/main.cpp
     {
-        const content = try replaceAll(allocator, TMPL_MAIN_C, "PROJ_NAME", name);
+        const tmpl = if (cpp) TMPL_MAIN_CPP else TMPL_MAIN_C;
+        const src_file = if (cpp) "main.cpp" else "main.c";
+        const content = try replaceAll(allocator, tmpl, "PROJ_NAME", name);
         defer allocator.free(content);
         var src_dir = try dir.openDir(io, "src", .{});
         defer src_dir.close(io);
-        try src_dir.writeFile(io, .{ .sub_path = "main.c", .data = content });
+        try src_dir.writeFile(io, .{ .sub_path = src_file, .data = content });
     }
 
     // .gitignore
     try dir.writeFile(io, .{ .sub_path = ".gitignore", .data = TMPL_GITIGNORE });
 
-    std.debug.print("Created project '{s}'\n", .{name});
+    const lang = if (cpp) "C++" else "C";
+    std.debug.print("Created {s} project '{s}'\n", .{ lang, name });
     std.debug.print("  cd {s}\n", .{name});
     std.debug.print("  zigc build         # compile\n", .{});
     std.debug.print("  zigc run           # compile and run\n", .{});
-    std.debug.print("  zigc add <url>     # add a C library dependency\n", .{});
+    std.debug.print("  zigc add <url>     # add a library dependency\n", .{});
 }
 
 /// Inserts a .fingerprint field into build.zig.zon before the closing brace.
