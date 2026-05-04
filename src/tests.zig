@@ -130,6 +130,80 @@ test "replaceAll: entire string replaced" {
     try std.testing.expectEqualStrings("xyz", out);
 }
 
+// ── Unit tests: integrity-check helpers ───────────────────────────────────
+
+const zon_with_paths =
+    \\.{
+    \\    .name = .foo,
+    \\    .paths = .{
+    \\        "build.zig",
+    \\        "build.zig.zon",
+    \\        "src",
+    \\    },
+    \\    .dependencies = .{},
+    \\}
+    \\
+;
+
+test "parseZonPaths: three entries" {
+    const paths = try main.parseZonPaths(gpa, zon_with_paths);
+    defer { for (paths) |p| gpa.free(p); gpa.free(paths); }
+    try std.testing.expectEqual(@as(usize, 3), paths.len);
+    try std.testing.expectEqualStrings("build.zig", paths[0]);
+    try std.testing.expectEqualStrings("build.zig.zon", paths[1]);
+    try std.testing.expectEqualStrings("src", paths[2]);
+}
+
+test "parseZonPaths: empty .paths block" {
+    const zon = ".{ .paths = .{} }";
+    const paths = try main.parseZonPaths(gpa, zon);
+    defer { for (paths) |p| gpa.free(p); gpa.free(paths); }
+    try std.testing.expectEqual(@as(usize, 0), paths.len);
+}
+
+test "parseZonPaths: no .paths field" {
+    const zon = ".{ .name = .foo }";
+    const paths = try main.parseZonPaths(gpa, zon);
+    defer { for (paths) |p| gpa.free(p); gpa.free(paths); }
+    try std.testing.expectEqual(@as(usize, 0), paths.len);
+}
+
+test "parseBuildDeps: single dependency" {
+    const src = "const x = b.dependency(\"lz4\", .{ .target = target });";
+    const keys = try main.parseBuildDeps(gpa, src);
+    defer { for (keys) |k| gpa.free(k); gpa.free(keys); }
+    try std.testing.expectEqual(@as(usize, 1), keys.len);
+    try std.testing.expectEqualStrings("lz4", keys[0]);
+}
+
+test "parseBuildDeps: multiple distinct deps" {
+    const src =
+        \\const a = b.dependency("lz4", .{});
+        \\const b_ = b.dependency("zstd", .{});
+    ;
+    const keys = try main.parseBuildDeps(gpa, src);
+    defer { for (keys) |k| gpa.free(k); gpa.free(keys); }
+    try std.testing.expectEqual(@as(usize, 2), keys.len);
+    try std.testing.expectEqualStrings("lz4", keys[0]);
+    try std.testing.expectEqualStrings("zstd", keys[1]);
+}
+
+test "parseBuildDeps: deduplicates repeated dep" {
+    const src =
+        \\const a = b.dependency("lz4", .{});
+        \\const b_ = b.dependency("lz4", .{});
+    ;
+    const keys = try main.parseBuildDeps(gpa, src);
+    defer { for (keys) |k| gpa.free(k); gpa.free(keys); }
+    try std.testing.expectEqual(@as(usize, 1), keys.len);
+}
+
+test "parseBuildDeps: no dependency calls" {
+    const keys = try main.parseBuildDeps(gpa, "const x = 1;\n");
+    defer { for (keys) |k| gpa.free(k); gpa.free(keys); }
+    try std.testing.expectEqual(@as(usize, 0), keys.len);
+}
+
 // ── Unit tests: package management helpers ─────────────────────────────────────
 
 const zon_fixture =
@@ -480,6 +554,120 @@ test "clean on a fresh project (no artifacts) succeeds" {
     defer gpa.free(r.stdout);
     defer gpa.free(r.stderr);
     try ok(r);
+}
+
+// ── Integration: zig-c check ───────────────────────────────────────────────────
+
+test "check: fresh project passes all checks" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "healthy" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    var proj = try tmp.dir.openDir(io, "healthy", .{});
+    defer proj.close(io);
+
+    const r = try runIn(proj, &.{ zig_c_path, "check" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try ok(r); // exit 0 means all checks passed
+    try stderrContains(r, "0 errors");
+    try stderrContains(r, "ok");
+}
+
+test "check: missing build.zig is reported as error" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "broken" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    // Remove build.zig.
+    var proj = try tmp.dir.openDir(io, "broken", .{});
+    defer proj.close(io);
+    try proj.deleteFile(io, "build.zig");
+
+    const r = try runIn(proj, &.{ zig_c_path, "check" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try fail(r); // exit non-zero
+    try stderrContains(r, "build.zig missing");
+    try stderrContains(r, "error");
+}
+
+test "check: path listed in .paths but deleted is an error" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "missing_path" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    var proj = try tmp.dir.openDir(io, "missing_path", .{});
+    defer proj.close(io);
+
+    // Delete src/ (which is listed in .paths).
+    try proj.deleteTree(io, "src");
+
+    const r = try runIn(proj, &.{ zig_c_path, "check" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try fail(r);
+    try stderrContains(r, "missing from disk");
+}
+
+test "check: b.dependency without zon entry is an error" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "dangling" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    var proj = try tmp.dir.openDir(io, "dangling", .{});
+    defer proj.close(io);
+
+    // Append a b.dependency call that has no zon entry.
+    const bz = try proj.readFileAlloc(io, "build.zig", gpa, .unlimited);
+    defer gpa.free(bz);
+    const injected = try std.mem.concat(gpa, u8, &.{
+        bz,
+        "// const ghost = b.dependency(\"ghost\", .{});\n",
+    });
+    defer gpa.free(injected);
+    try proj.writeFile(io, .{ .sub_path = "build.zig", .data = injected });
+
+    // Even with it in a comment parseBuildDeps won't find it,
+    // so write a real (non-comment) call:
+    const bz2 = try proj.readFileAlloc(io, "build.zig", gpa, .unlimited);
+    defer gpa.free(bz2);
+    const with_dangling = try std.mem.concat(gpa, u8, &.{
+        bz2[0 .. bz2.len - 3], // trim last '\n}\n'
+        "    const x = b.dependency(\"phantom\", .{});\n}\n",
+    });
+    defer gpa.free(with_dangling);
+    try proj.writeFile(io, .{ .sub_path = "build.zig", .data = with_dangling });
+
+    const r = try runIn(proj, &.{ zig_c_path, "check" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try fail(r);
+    try stderrContains(r, "has no entry in build.zig.zon");
 }
 
 // ── Integration: list + remove ───────────────────────────────────────────────────

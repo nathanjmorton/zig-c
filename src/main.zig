@@ -10,6 +10,7 @@ const usage =
     \\  zig-c add    <url> [--lib n] Add and auto-link a dependency
     \\  zig-c remove <name>          Remove a dependency
     \\  zig-c list                   List installed dependencies
+    \\  zig-c check  [--build]       Verify project integrity
     \\  zig-c build                  Build the current project  (zig build)
     \\  zig-c run                    Build and run the project  (zig build run)
     \\  zig-c clean                  Remove .zig-cache/ and zig-out/
@@ -85,6 +86,83 @@ const TMPL_GITIGNORE =
     \\zig-out/
     \\
 ;
+
+// ── Integrity-check types + helpers ─────────────────────────────────────────
+
+/// Accumulates pass / warn / fail counts for `zig-c check`.
+const Check = struct {
+    n_ok: usize = 0,
+    n_warn: usize = 0,
+    n_fail: usize = 0,
+
+    fn ok(c: *Check, msg: []const u8) void {
+        std.debug.print("  \u{2713} {s}\n", .{msg});
+        c.n_ok += 1;
+    }
+    fn warn(c: *Check, msg: []const u8) void {
+        std.debug.print("  ! {s}\n", .{msg});
+        c.n_warn += 1;
+    }
+    fn fail(c: *Check, msg: []const u8) void {
+        std.debug.print("  \u{2717} {s}\n", .{msg});
+        c.n_fail += 1;
+    }
+};
+
+/// Return true if `sub_path` exists as either a file or a directory.
+fn pathExists(dir: std.Io.Dir, io: std.Io, sub_path: []const u8) bool {
+    if (dir.statFile(io, sub_path, .{})) |_| return true else |_| {}
+    if (dir.openDir(io, sub_path, .{})) |d| { d.close(io); return true; } else |_| {}
+    return false;
+}
+
+/// Extract the quoted string values from a `.paths = .{ "a", "b", ... }` block.
+pub fn parseZonPaths(allocator: std.mem.Allocator, zon: []const u8) ![][]const u8 {
+    var list: std.ArrayList([]const u8) = .empty;
+
+    const PATHS_OPEN = ".paths = .{";
+    const start = std.mem.indexOf(u8, zon, PATHS_OPEN) orelse
+        return list.toOwnedSlice(allocator);
+
+    var pos = start + PATHS_OPEN.len;
+    var depth: usize = 1;
+
+    while (pos < zon.len and depth > 0) : (pos += 1) {
+        switch (zon[pos]) {
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            '"' => if (depth == 1) {
+                pos += 1;
+                const s = pos;
+                while (pos < zon.len and zon[pos] != '"') pos += 1;
+                if (pos > s) try list.append(allocator, try allocator.dupe(u8, zon[s..pos]));
+            },
+            else => {},
+        }
+    }
+
+    return list.toOwnedSlice(allocator);
+}
+
+/// Collect (deduplicated) dep-key strings from all `b.dependency("key", ...)` calls.
+pub fn parseBuildDeps(allocator: std.mem.Allocator, build_zig: []const u8) ![][]const u8 {
+    var keys: std.ArrayList([]const u8) = .empty;
+    const MARKER = "b.dependency(\"";
+    var pos: usize = 0;
+    while (pos < build_zig.len) {
+        const rel = std.mem.indexOf(u8, build_zig[pos..], MARKER) orelse break;
+        const ks = pos + rel + MARKER.len;
+        const ke = std.mem.indexOf(u8, build_zig[ks..], "\"") orelse break;
+        const key = build_zig[ks .. ks + ke];
+        // Deduplicate.
+        const seen = for (keys.items) |k| {
+            if (std.mem.eql(u8, k, key)) break true;
+        } else false;
+        if (!seen) try keys.append(allocator, try allocator.dupe(u8, key));
+        pos = ks + ke + 1;
+    }
+    return keys.toOwnedSlice(allocator);
+}
 
 // ── Package management types + helpers ───────────────────────────────────────
 
@@ -488,6 +566,146 @@ fn cmdRemove(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8)
     std.debug.print("Removed '{s}' from build.zig.zon and build.zig.\n", .{key});
 }
 
+fn cmdCheck(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var do_build = false;
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--build")) do_build = true;
+    }
+
+    var c: Check = .{};
+    // Arena for all temporary strings produced during checking.
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const cwd = std.Io.Dir.cwd();
+
+    std.debug.print("zig-c check\n", .{});
+
+    // ── 1. Required files ──────────────────────────────────────────────────
+    std.debug.print("\nRequired files:\n", .{});
+
+    var build_zig: ?[]const u8 = null;
+    if (cwd.readFileAlloc(io, "build.zig", ar, .unlimited)) |v| {
+        build_zig = v;
+        c.ok("build.zig found");
+    } else |_| {
+        c.fail("build.zig missing");
+    }
+
+    var zon: ?[]const u8 = null;
+    if (cwd.readFileAlloc(io, "build.zig.zon", ar, .unlimited)) |v| {
+        zon = v;
+        c.ok("build.zig.zon found");
+    } else |_| {
+        c.fail("build.zig.zon missing");
+    }
+
+    // ── 2. build.zig structure ─────────────────────────────────────────────
+    if (build_zig) |bz| {
+        std.debug.print("\nbuild.zig:\n", .{});
+        if (std.mem.indexOf(u8, bz, "pub fn build(b: *std.Build)") != null) {
+            c.ok("pub fn build(b: *std.Build) declared");
+        } else {
+            c.fail("pub fn build(b: *std.Build) not found");
+        }
+    }
+
+    // ── 3. build.zig.zon fields ────────────────────────────────────────────
+    if (zon) |z| {
+        std.debug.print("\nbuild.zig.zon fields:\n", .{});
+
+        if (std.mem.indexOf(u8, z, ".name = .") != null)
+            c.ok(".name is set")
+        else
+            c.fail(".name is missing");
+
+        if (std.mem.indexOf(u8, z, ".version = \"") != null)
+            c.ok(".version is set")
+        else
+            c.warn(".version not specified");
+
+        if (std.mem.indexOf(u8, z, ".minimum_zig_version = \"") != null)
+            c.ok(".minimum_zig_version is set")
+        else
+            c.warn(".minimum_zig_version not specified");
+
+        if (std.mem.indexOf(u8, z, ".fingerprint = ") != null)
+            c.ok(".fingerprint is set")
+        else
+            c.warn(".fingerprint missing — zig-c add will insert it on first use");
+
+        // ── 4. .paths entries exist on disk ──────────────────────────────
+        std.debug.print("\n.paths entries:\n", .{});
+        const paths = try parseZonPaths(ar, z);
+        if (paths.len == 0) {
+            c.warn(".paths block is empty or missing");
+        } else {
+            for (paths) |path| {
+                if (pathExists(cwd, io, path)) {
+                    c.ok(try std.fmt.allocPrint(ar, "'{s}' exists on disk", .{path}));
+                } else {
+                    c.fail(try std.fmt.allocPrint(ar, "'{s}' listed in .paths but missing from disk", .{path}));
+                }
+            }
+        }
+    }
+
+    // ── 5. Dependency consistency ──────────────────────────────────────────
+    {
+        std.debug.print("\nDependency consistency:\n", .{});
+        const z = zon orelse "";
+        const bz = build_zig orelse "";
+        const zon_deps = try parseZonDeps(ar, z);
+        const build_keys = try parseBuildDeps(ar, bz);
+
+        if (zon_deps.len == 0 and build_keys.len == 0) {
+            c.ok("no dependencies declared");
+        } else {
+            // Forward: every dep declared in build.zig.zon should be linked.
+            for (zon_deps) |dep| {
+                const linked = for (build_keys) |bk| {
+                    if (std.mem.eql(u8, bk, dep.key)) break true;
+                } else false;
+                if (linked) {
+                    c.ok(try std.fmt.allocPrint(ar, "dep '{s}' declared in zon is linked in build.zig", .{dep.key}));
+                } else {
+                    c.warn(try std.fmt.allocPrint(ar, "dep '{s}' declared in zon is not linked in build.zig", .{dep.key}));
+                }
+            }
+            // Backward: every b.dependency("key") must have a zon entry.
+            for (build_keys) |bk| {
+                const declared = for (zon_deps) |dep| {
+                    if (std.mem.eql(u8, dep.key, bk)) break true;
+                } else false;
+                if (!declared) {
+                    c.fail(try std.fmt.allocPrint(ar,
+                        "b.dependency(\"{s}\") in build.zig has no entry in build.zig.zon",
+                        .{bk}));
+                }
+            }
+        }
+    }
+
+    // ── 6. Optional: compilation check ────────────────────────────────────
+    if (do_build) {
+        std.debug.print("\nCompilation (zig build):\n", .{});
+        if (exec(io, &.{"zig", "build"})) |_| {
+            c.ok("zig build succeeded");
+        } else |_| {
+            c.fail("zig build failed (see errors above)");
+        }
+    }
+
+    // ── Summary ────────────────────────────────────────────────────────────
+    const ws: []const u8 = if (c.n_warn == 1) "" else "s";
+    const es: []const u8 = if (c.n_fail == 1) "" else "s";
+    std.debug.print("\n{d} ok, {d} warning{s}, {d} error{s}\n", .{
+        c.n_ok, c.n_warn, ws, c.n_fail, es,
+    });
+
+    if (c.n_fail > 0) return error.CheckFailed;
+}
+
 fn cmdList(io: std.Io, allocator: std.mem.Allocator) !void {
     const cwd = std.Io.Dir.cwd();
     const zon = cwd.readFileAlloc(io, "build.zig.zon", allocator, .unlimited) catch {
@@ -560,6 +778,8 @@ pub fn main(init: std.process.Init) !void {
         try cmdRemove(io, allocator, rest);
     } else if (std.mem.eql(u8, cmd, "list") or std.mem.eql(u8, cmd, "ls")) {
         try cmdList(io, allocator);
+    } else if (std.mem.eql(u8, cmd, "check")) {
+        try cmdCheck(io, allocator, rest);
     } else if (std.mem.eql(u8, cmd, "build")) {
         try cmdBuild(io, allocator);
     } else if (std.mem.eql(u8, cmd, "run")) {
