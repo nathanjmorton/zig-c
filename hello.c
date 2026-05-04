@@ -2,8 +2,10 @@
 #include <string.h>
 #include <lz4.h>
 
-int main(void) {
-    const char *src = "Hello from zig-c! This string will be compressed with lz4.";
+int main(int argc, char *argv[]) {
+    const char *name = (argc > 1) ? argv[1] : "zig-c";
+    char src[256];
+    snprintf(src, sizeof(src), "Hello from %s! This string will be compressed with lz4.", name);
     int src_len = (int)strlen(src) + 1;
     int max_dst = LZ4_compressBound(src_len);
 
