@@ -6,6 +6,7 @@
         "build.zig",
         "build.zig.zon",
         "hello.c",
+        "src",
     },
     .dependencies = .{
         .lz4 = .{
