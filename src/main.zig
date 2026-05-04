@@ -11,6 +11,7 @@ const usage =
     \\  zigc remove <name>          Remove a dependency
     \\  zigc list                   List installed dependencies
     \\  zigc check  [--build]       Verify project integrity
+    \\  zigc verify [--symbols]     Inspect object files and symbols
     \\  zigc build                  Build the current project  (zig build)
     \\  zigc run                    Build and run the project  (zig build run)
     \\  zigc clean                  Remove .zig-cache/ and zig-out/
@@ -566,6 +567,222 @@ fn cmdRemove(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8)
     std.debug.print("Removed '{s}' from build.zig.zon and build.zig.\n", .{key});
 }
 
+fn cmdVerify(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var show_symbols = false;
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--symbols")) show_symbols = true;
+    }
+
+    var c: Check = .{};
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const cwd = std.Io.Dir.cwd();
+    const zon = cwd.readFileAlloc(io, "build.zig.zon", ar, .unlimited) catch "";
+    const deps = try parseZonDeps(ar, zon);
+
+    std.debug.print("zigc verify\n", .{});
+
+    // ── 1. Compiled libraries in .zig-cache (object-file layer) ───────────────
+    std.debug.print("\nCompiled libraries (.zig-cache):\n", .{});
+
+    const find_res = try std.process.run(ar, io, .{
+        .argv = &.{ "find", ".zig-cache", "-name", "lib*.a", "-type", "f" },
+    });
+    if (find_res.stdout.len == 0) {
+        c.warn("no .a files found in .zig-cache — run 'zigc build' first");
+    } else {
+        var lib_lines = std.mem.splitScalar(u8, std.mem.trimEnd(u8, find_res.stdout, "\n"), '\n');
+        while (lib_lines.next()) |lib_path| {
+            if (lib_path.len == 0) continue;
+            // Derive filename from the path.
+            const lib_name = blk: {
+                const sep = std.mem.lastIndexOfScalar(u8, lib_path, '/') orelse break :blk lib_path;
+                break :blk lib_path[sep + 1 ..];
+            };
+            const lib_stat = cwd.statFile(io, lib_path, .{}) catch continue;
+            // Try to match the library name to a dep key.
+            var dep_label: []const u8 = "";
+            for (deps) |dep| {
+                const expected = try std.fmt.allocPrint(ar, "lib{s}.a", .{dep.key});
+                if (std.mem.eql(u8, lib_name, expected)) {
+                    dep_label = try std.fmt.allocPrint(ar, "  — dep '{s}'", .{dep.key});
+                    break;
+                }
+            }
+            c.ok(try std.fmt.allocPrint(ar, "{s}  ({d:.1} MB){s}", .{
+                lib_name,
+                @as(f64, @floatFromInt(lib_stat.size)) / (1024.0 * 1024.0),
+                dep_label,
+            }));
+        }
+    }
+
+    // ── 2. Final binary in zig-out/bin/ ──────────────────────────────────────────
+    std.debug.print("\nBinary artifacts (zig-out/bin):\n", .{});
+
+    var bin_dir = cwd.openDir(io, "zig-out/bin", .{ .iterate = true }) catch {
+        c.fail("zig-out/bin not found — run 'zigc build' first");
+        const ws: []const u8 = if (c.n_warn == 1) "" else "s";
+        const es: []const u8 = if (c.n_fail == 1) "" else "s";
+        std.debug.print("\n{d} ok, {d} warning{s}, {d} error{s}\n", .{ c.n_ok, c.n_warn, ws, c.n_fail, es });
+        return error.VerifyFailed;
+    };
+    defer bin_dir.close(io);
+
+    var binaries: std.ArrayList([]const u8) = .empty;
+    {
+        var iter = bin_dir.iterate();
+        while (try iter.next(io)) |entry| {
+            if (entry.kind != .directory) {
+                try binaries.append(ar, try ar.dupe(u8, entry.name));
+            }
+        }
+    }
+    if (binaries.items.len == 0) {
+        c.fail("zig-out/bin is empty — run 'zigc build' first");
+        const ws: []const u8 = if (c.n_warn == 1) "" else "s";
+        const es: []const u8 = if (c.n_fail == 1) "" else "s";
+        std.debug.print("\n{d} ok, {d} warning{s}, {d} error{s}\n", .{ c.n_ok, c.n_warn, ws, c.n_fail, es });
+        return error.VerifyFailed;
+    }
+
+    for (binaries.items) |name| {
+        const path = try std.fmt.allocPrint(ar, "zig-out/bin/{s}", .{name});
+        const stat = bin_dir.statFile(io, name, .{}) catch {
+            c.fail(try std.fmt.allocPrint(ar, "'{s}': stat failed", .{name}));
+            continue;
+        };
+
+        // file(1) — format and architecture.
+        const file_res = try std.process.run(ar, io, .{ .argv = &.{ "file", path } });
+        const is_exec =
+            std.mem.indexOf(u8, file_res.stdout, "executable") != null or
+            std.mem.indexOf(u8, file_res.stdout, "Mach-O") != null or
+            std.mem.indexOf(u8, file_res.stdout, "ELF") != null;
+        const desc = if (std.mem.indexOf(u8, file_res.stdout, ": ")) |colon|
+            std.mem.trimEnd(u8, file_res.stdout[colon + 2 ..], "\n\r")
+        else
+            std.mem.trimEnd(u8, file_res.stdout, "\n\r");
+
+        if (is_exec) {
+            c.ok(try std.fmt.allocPrint(ar, "'{s}' — {s}  ({d:.1} KB)", .{
+                name, desc, @as(f64, @floatFromInt(stat.size)) / 1024.0,
+            }));
+        } else {
+            c.fail(try std.fmt.allocPrint(ar, "'{s}' not a valid executable: {s}", .{ name, desc }));
+            continue;
+        }
+
+        // nm -g — global (exported) symbols.
+        const nm_res = try std.process.run(ar, io, .{ .argv = &.{ "nm", "-g", path } });
+        const nm_ok = switch (nm_res.term) {
+            .exited => |code| code == 0,
+            else => false,
+        };
+        if (!nm_ok) {
+            c.fail(try std.fmt.allocPrint(ar, "nm failed on '{s}' — is nm installed?", .{name}));
+            continue;
+        }
+
+        // ── 3. Parse nm output ─────────────────────────────────────────────────
+        // nm line format (after whitespace-tokenization):
+        //   3 tokens → defined:   addr  TYPE  symbol
+        //   2 tokens → undefined: U     symbol
+        std.debug.print("\nSymbol analysis ({s}):\n", .{name});
+
+        var n_defined: usize = 0;
+        var n_undefined: usize = 0;
+        var has_main = false;
+
+        var lines = std.mem.splitScalar(u8, nm_res.stdout, '\n');
+        while (lines.next()) |line| {
+            if (line.len == 0) continue;
+            var toks = std.mem.tokenizeScalar(u8, line, ' ');
+            const t1 = toks.next() orelse continue;
+            const t2 = toks.next() orelse continue;
+            if (toks.next()) |sym| {
+                // Defined symbol: t1=addr, t2=type (unused in defined branch), sym=name.
+                n_defined += 1;
+                _ = t2;
+                // macOS nm prepends '_' to C symbols; strip it for comparison.
+                const bare = if (sym.len > 0 and sym[0] == '_') sym[1..] else sym;
+                if (std.mem.eql(u8, bare, "main")) has_main = true;
+            } else {
+                // Undefined symbol: t1=type, t2=name.
+                if (std.mem.eql(u8, t1, "U")) n_undefined += 1;
+            }
+        }
+
+        if (has_main) {
+            c.ok("main entrypoint defined");
+        } else {
+            c.fail("main entrypoint missing");
+        }
+        c.ok(try std.fmt.allocPrint(ar, "{d} defined symbols,  {d} undefined (OS / libc calls)", .{
+            n_defined, n_undefined,
+        }));
+        if (n_undefined > 200) {
+            c.warn(try std.fmt.allocPrint(ar,
+                "{d} undefined symbols is unusually high — possible missing static dep", .{n_undefined}));
+        }
+
+        // ── 4. Dep symbol presence ──────────────────────────────────────────────
+        // Search for "depname_" in nm output. On macOS nm output contains
+        // "_sqlite3_open", so "sqlite3_" is a substring match on both platforms.
+        if (deps.len > 0) std.debug.print("\nDependency symbols:\n", .{});
+        for (deps) |dep| {
+            const prefix = try std.fmt.allocPrint(ar, "{s}_", .{dep.key});
+            var count: usize = 0;
+            var pos: usize = 0;
+            while (std.mem.indexOf(u8, nm_res.stdout[pos..], prefix)) |p| {
+                count += 1;
+                pos += p + 1;
+            }
+            if (count > 0) {
+                c.ok(try std.fmt.allocPrint(ar,
+                    "dep '{s}' — {d} symbols compiled in  (e.g. {s}open, {s}exec…)",
+                    .{ dep.key, count, prefix, prefix }));
+            } else {
+                c.warn(try std.fmt.allocPrint(ar,
+                    "dep '{s}' — no '{s}*' symbols found in binary (linking issue?)",
+                    .{ dep.key, prefix }));
+            }
+        }
+
+        // ── 5. Optional: full symbol table ──────────────────────────────────────
+        if (show_symbols) {
+            std.debug.print("\nDefined symbols (first 50):\n", .{});
+            var shown: usize = 0;
+            lines = std.mem.splitScalar(u8, nm_res.stdout, '\n');
+            while (lines.next()) |line| {
+                if (line.len == 0) continue;
+                var toks = std.mem.tokenizeScalar(u8, line, ' ');
+                const ta = toks.next() orelse continue;
+                const tb = toks.next() orelse continue;
+                _ = ta;
+                if (toks.next()) |sym| {
+                    const bare = if (sym.len > 0 and sym[0] == '_') sym[1..] else sym;
+                    std.debug.print("  {s}  {s}\n", .{ tb, bare });
+                    shown += 1;
+                    if (shown >= 50) {
+                        std.debug.print("  … ({d} more)\n", .{n_defined - 50});
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Summary ────────────────────────────────────────────────────────────
+    const ws: []const u8 = if (c.n_warn == 1) "" else "s";
+    const es: []const u8 = if (c.n_fail == 1) "" else "s";
+    std.debug.print("\n{d} ok, {d} warning{s}, {d} error{s}\n", .{
+        c.n_ok, c.n_warn, ws, c.n_fail, es,
+    });
+    if (c.n_fail > 0) return error.VerifyFailed;
+}
+
 fn cmdCheck(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     var do_build = false;
     for (args) |arg| {
@@ -780,6 +997,8 @@ pub fn main(init: std.process.Init) !void {
         try cmdList(io, allocator);
     } else if (std.mem.eql(u8, cmd, "check")) {
         try cmdCheck(io, allocator, rest);
+    } else if (std.mem.eql(u8, cmd, "verify")) {
+        try cmdVerify(io, allocator, rest);
     } else if (std.mem.eql(u8, cmd, "build")) {
         try cmdBuild(io, allocator);
     } else if (std.mem.eql(u8, cmd, "run")) {

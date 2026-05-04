@@ -670,6 +670,60 @@ test "check: b.dependency without zon entry is an error" {
     try stderrContains(r, "has no entry in build.zig.zon");
 }
 
+// ── Integration: zigc verify ───────────────────────────────────────────────────
+
+test "verify: passes after build — binary valid, main defined" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "vertest" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    var proj = try tmp.dir.openDir(io, "vertest", .{});
+    defer proj.close(io);
+
+    // Build first so there are artifacts to inspect.
+    {
+        const r = try runIn(proj, &.{ zig_c_path, "build" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    const r = try runIn(proj, &.{ zig_c_path, "verify" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try ok(r); // exit 0 = all verify checks passed
+    try stderrContains(r, "main entrypoint defined");
+    try stderrContains(r, "0 errors");
+}
+
+test "verify: fails before build (no zig-out/bin)" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "nobin" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    var proj = try tmp.dir.openDir(io, "nobin", .{});
+    defer proj.close(io);
+
+    // Intentionally skip 'zigc build'.
+    const r = try runIn(proj, &.{ zig_c_path, "verify" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try fail(r); // must exit non-zero
+    try stderrContains(r, "not found"); // zig-out/bin not found
+}
+
 // ── Integration: list + remove ───────────────────────────────────────────────────
 
 test "list: no dependencies shows empty message" {
