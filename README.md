@@ -267,6 +267,26 @@ zigc run   -- myarg            # → zig build run -- myarg
 
 The `-Dcflags=` option is wired into the generated `build.zig` so the extra flags reach the C compiler alongside the defaults (`-std=c11 -Wall -Wextra`).
 
+### `zigc registry generate` — scraping allyourcodebase
+
+This is a maintainer command that auto-populates `registry.json` by scraping the [allyourcodebase](https://github.com/allyourcodebase) GitHub org.
+
+```sh
+zigc registry generate              # scrape all repos (slow, ~117 repos)
+zigc registry generate --limit 10   # test with first 10 repos
+```
+
+The unauthenticated GitHub API rate limit is 60 requests/hour, which is not enough for a full scrape (~120 repos × 2 API calls + fetches). Set `GITHUB_TOKEN` for 5000 req/hr:
+
+```sh
+export GITHUB_TOKEN=ghp_your_token_here
+zigc registry generate
+```
+
+You can create a token at [github.com/settings/tokens](https://github.com/settings/tokens) — no special scopes are needed (public repo read access is sufficient).
+
+The command writes `registry.json` to the current directory. Repos without tags or whose `zig fetch` fails are skipped with a message.
+
 ### `zigc add` — artifact name override
 
 When the package's artifact name differs from its dep key (uncommon), use `--lib`:
