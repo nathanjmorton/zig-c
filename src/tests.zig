@@ -1048,3 +1048,125 @@ test "no arguments: prints usage without error" {
     defer gpa.free(combined);
     try std.testing.expect(std.mem.indexOf(u8, combined, "Usage") != null);
 }
+
+// ── Integration: zigc init --cpp ─────────────────────────────────────────────
+
+test "init --cpp: creates src/main.cpp with correct content" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "cpp-app", "--cpp" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try ok(r);
+
+    var proj = try tmp.dir.openDir(io, "cpp-app", .{});
+    defer proj.close(io);
+    var src = try proj.openDir(io, "src", .{});
+    defer src.close(io);
+
+    // src/main.cpp must exist and contain C++ includes.
+    try hasContent(src, "main.cpp", "#include <iostream>");
+    // The greeting is built at runtime ("Hello from " << name), so check parts.
+    try hasContent(src, "main.cpp", "Hello from ");
+    try hasContent(src, "main.cpp", "\"cpp-app\""); // default name literal
+
+    // src/main.c must NOT exist.
+    const stat = src.statFile(io, "main.c", .{});
+    if (stat) |_| return error.UnexpectedMainC else |_| {}
+}
+
+test "init --cpp: build.zig uses link_libcpp and c++17" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "cppflags", "--cpp" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try ok(r);
+
+    var proj = try tmp.dir.openDir(io, "cppflags", .{});
+    defer proj.close(io);
+
+    try hasContent(proj, "build.zig", ".link_libcpp = true");
+    try hasContent(proj, "build.zig", "-std=c++17");
+    try hasContent(proj, "build.zig", "main.cpp");
+    // Must NOT contain C-only markers.
+    try lacksContent(proj, "build.zig", ".link_libc = true");
+    try lacksContent(proj, "build.zig", "-std=c11");
+    // Use quoted form to avoid matching "main.cpp" as a substring of "main.c".
+    try lacksContent(proj, "build.zig", "\"main.c\"");
+}
+
+test "init --cpp: C project (no flag) is unchanged" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "conly" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try ok(r);
+
+    var proj = try tmp.dir.openDir(io, "conly", .{});
+    defer proj.close(io);
+    var src = try proj.openDir(io, "src", .{});
+    defer src.close(io);
+
+    try hasContent(src, "main.c", "#include <stdio.h>");
+    try hasContent(proj, "build.zig", ".link_libc = true");
+    try hasContent(proj, "build.zig", "-std=c11");
+    try lacksContent(proj, "build.zig", "link_libcpp");
+}
+
+test "init --cpp → build: compiles and produces binary" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "cppbuilder", "--cpp" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    var proj = try tmp.dir.openDir(io, "cppbuilder", .{});
+    defer proj.close(io);
+
+    {
+        const r = try runIn(proj, &.{ zig_c_path, "build" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    _ = try proj.statFile(io, "zig-out/bin/cppbuilder", .{});
+}
+
+test "init --cpp → run: binary prints expected greeting" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "cppgreeter", "--cpp" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    var proj = try tmp.dir.openDir(io, "cppgreeter", .{});
+    defer proj.close(io);
+
+    const r = try runIn(proj, &.{ zig_c_path, "run" });
+    defer gpa.free(r.stdout);
+    defer gpa.free(r.stderr);
+    try ok(r);
+
+    const combined = try std.mem.concat(gpa, u8, &.{ r.stdout, r.stderr });
+    defer gpa.free(combined);
+    if (std.mem.indexOf(u8, combined, "Hello from cppgreeter!") == null) {
+        std.debug.print("\nExpected 'Hello from cppgreeter!' in output.\nstdout:\n{s}\nstderr:\n{s}\n", .{
+            r.stdout, r.stderr,
+        });
+        return error.MissingGreeting;
+    }
+}
