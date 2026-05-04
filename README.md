@@ -287,6 +287,42 @@ You can create a token at [github.com/settings/tokens](https://github.com/settin
 
 The command writes `registry.json` to the current directory. Repos without tags or whose `zig fetch` fails are skipped with a message.
 
+### Registry synchronization workflow
+
+The registry has two sides: a **source file** (`registry.json` in the zig-c repo) and a **local cache** (`~/.zigc/registry.json` on each user's machine).
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  Maintainer (one-time, in the zig-c repo checkout)         │
+│                                                            │
+│  export GITHUB_TOKEN=ghp_...                               │
+│  zigc registry generate    # scrapes allyourcodebase       │
+│  git add registry.json && git commit && git push           │
+└────────────────────────────────────────────────────────────────┘
+                              │
+                    git push to GitHub
+                              │
+                              ▼
+          registry.json on main branch
+          (raw.githubusercontent.com/nathanjmorton/zig-c/main/registry.json)
+                              │
+                    curl (via zigc)
+                              │
+                              ▼
+┌────────────────────────────────────────────────────────────────┐
+│  User (any machine)                                        │
+│                                                            │
+│  zigc registry update      # downloads to ~/.zigc/         │
+│  zigc add zstd             # resolves from local cache     │
+└────────────────────────────────────────────────────────────────┘
+```
+
+- **`zigc registry generate`** — maintainer tool. Scrapes `allyourcodebase`, runs `zig fetch` for each tagged repo, and writes `registry.json` in the current directory. Commit and push this file to make it available to users.
+- **`zigc registry update`** — user tool. Fetches `registry.json` from the zig-c repo’s raw GitHub URL and saves it to `~/.zigc/registry.json`.
+- **`zigc add <name>`** — reads `~/.zigc/registry.json` locally. No network call needed at add time since the URL and hash are pre-computed in the registry.
+
+To refresh the registry with new packages, a maintainer runs `generate`, commits, and pushes. Users then run `update` to pull the latest.
+
 ### `zigc add` — artifact name override
 
 When the package's artifact name differs from its dep key (uncommon), use `--lib`:
