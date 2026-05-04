@@ -1,7 +1,212 @@
 {
-  "lz4": {
-    "url": "git+https://github.com/allyourcodebase/lz4.git?ref=1.10.0-6#41f52ab227caf9d48cf88c89a4d2946caa12b102",
-    "hash": "lz4-1.10.0-6-ewyzw-4NAAAWDpY4xpiqr4LQhZQAC0x_rGnW2iPh6jk2",
-    "lib": "lz4"
+  "7_zip": {
+    "url": "git+https://github.com/allyourcodebase/7-Zip.git?ref=23.0.1#ca153ac505b8faf394e297006522908ae3959094",
+    "hash": "N-V-__8AADZNiwDJNN4wOp9L0H25dLxeShSBY8i0XpTHYB_D",
+    "lib": "7_zip"
+  },
+  "zlib": {
+    "url": "git+https://github.com/allyourcodebase/zlib.git?ref=1.3.2#d3b5519d3b73616a6bfece0712f080029d2a9244",
+    "hash": "zlib-1.3.2-ZZQ7lc8NAAAHm9MDfplvwoesXvk4tVm6VCsiI8KnIbT0",
+    "lib": "zlib"
+  },
+  "openssl": {
+    "url": "git+https://github.com/allyourcodebase/openssl.git?ref=3.3.2#cad7ccba47e42fa608ca655ec14ae33202df86e1",
+    "hash": "openssl-3.3.2-TC9C3Wa3ZACgB1hZbrLOQCK9XccIBaW_F3imFfIeYP06",
+    "lib": "openssl"
+  },
+  "valgrind.h": {
+    "url": "git+https://github.com/allyourcodebase/valgrind.h.git?ref=3.23.0#e9a37a9a0ae79f672d81afe5fc888a6bb129c4f7",
+    "hash": "N-V-__8AAMV2BgB9aKHnchADe5onASuvEqAeRRO7Ai1oTuzW",
+    "lib": "valgrind.h"
+  },
+  "zstd": {
+    "url": "git+https://github.com/allyourcodebase/zstd.git?ref=1.5.7#01327d49cbc56dc24c20a167bb0055d7fc23de84",
+    "hash": "zstd-1.5.7-KEItkJ8vAAC5_rRlKmLflYQ-eKXbAIQBWZNmmJtS18q0",
+    "lib": "zstd"
+  },
+  "libgit2": {
+    "url": "git+https://github.com/allyourcodebase/libgit2.git?ref=v1.9.0#0a30de316f8455dfd0429bc90a6ab27d98d957df",
+    "hash": "libgit2-1.9.0-uizqTSnWAADnbLC8s7ma6s7RQwaCAzzlefSwu21AnYdr",
+    "lib": "libgit2"
+  },
+  "boost_libraries_zig": {
+    "url": "git+https://github.com/allyourcodebase/boost-libraries-zig.git?ref=boost-1.90.0#0cb7310212a7548087cf95cf523e8df37e77a43f",
+    "hash": "boost_libraries-1.60.0-frkKHLWDAQC3L0kqdOBJGamhffAUzS-w_wCcQSL73l13",
+    "lib": "boost_libraries_zig"
+  },
+  "libyaml": {
+    "url": "git+https://github.com/allyourcodebase/libyaml.git?ref=dist-0.2.4#229d804d94e5a7d9e4be7731e0995bcd6e618610",
+    "hash": "N-V-__8AAHcILwDWOTUMuaj4KAg2uA5k1bNzoTCxDneU-I9i",
+    "lib": "libyaml"
+  },
+  "libcyaml": {
+    "url": "git+https://github.com/allyourcodebase/libcyaml.git?ref=v1.4.2#d05365e474e56d34c8d4b25599a333c0635eeebf",
+    "hash": "N-V-__8AAFFDDAD1pnJGFDa55FpoATaDbvHUv3pTnQkaOoFI",
+    "lib": "libcyaml"
+  },
+  "libressl": {
+    "url": "git+https://github.com/allyourcodebase/libressl.git?ref=4.0.0+5#ebc2702fd1bf4438d98776d93092ce0d17b46a07",
+    "hash": "libressl-4.0.0--kqV4A3UAAA6SLtVw2W3xHfCUNy2eJggE4zchLzax-K5",
+    "lib": "libressl"
+  },
+  "libpq": {
+    "url": "git+https://github.com/allyourcodebase/libpq.git?ref=5.18.1+1#e57f9044b361595ea8c5d474ca94f638f82c9f12",
+    "hash": "libpq-5.18.1-QME6aUwKAQBkVvW5jqhSPw_c9my0to9bWuAQasygqbQa",
+    "lib": "libpq"
+  },
+  "protobuf_c": {
+    "url": "git+https://github.com/allyourcodebase/protobuf-c.git?ref=1.5.0+1#788002c09c410d4ecf35f602c8d727d64702fee8",
+    "hash": "protobuf_c-1.5.0-CLNmUYEUAACkZIYI4IaB5pQZplPmDKHdTzdAQVQWpapP",
+    "lib": "protobuf_c"
+  },
+  "nats.c": {
+    "url": "git+https://github.com/allyourcodebase/nats.c.git?ref=3.9.3#81a546c524f7c3db16606b85b5d729b393d8667e",
+    "hash": "nats_c-3.9.3-0V8jnNdSAACkcRB0PdrHECfsTXSiySA6OeAOx1e83iaM",
+    "lib": "nats.c"
+  },
+  "catch2": {
+    "url": "git+https://github.com/allyourcodebase/catch2.git?ref=3.14.0#bfef3a420d2235d6ee4778b67daae13696be4ea4",
+    "hash": "catch2-3.14.0-UrP6zqYbAAANjTFnxOhRFuR7ueiUaqA39QSFDB6pQOVk",
+    "lib": "catch2"
+  },
+  "lmdb": {
+    "url": "git+https://github.com/allyourcodebase/lmdb.git?ref=0.9.35#e8b775165f3c62876582702c602b4b361e30d0ef",
+    "hash": "lmdb-0.9.35-ymBDRwk5AABx0_ZY66hLDc3KF-Ja9Jw4uNFFArwol8S_",
+    "lib": "lmdb"
+  },
+  "libssh2": {
+    "url": "git+https://github.com/allyourcodebase/libssh2.git?ref=libssh2-1.11.1#d67e17dd94804075fef22579f01a016975d422e1",
+    "hash": "libssh2-1.11.1-JgdeRzMXAACfW4ZNl4ujvAd9lI1bRZW-2We9gp0vACLk",
+    "lib": "libssh2"
+  },
+  "libexpat": {
+    "url": "git+https://github.com/allyourcodebase/libexpat.git?ref=2.7.1#917dcfdf644814a73b6a25eac6b2d434f9f1f99f",
+    "hash": "libexpat-2.7.1-y_akI1M7AAA1huPJVegH4dosRVA-lMRgzMuX9vC7aB1s",
+    "lib": "libexpat"
+  },
+  "libxml2": {
+    "url": "git+https://github.com/allyourcodebase/libxml2.git?ref=2.15.1#532cdc21c1c25b2f3f63ed355392b80cc405cbe0",
+    "hash": "libxml2-2.15.1-qHdjhi9MAADPDiXFeNsWnUmr03JdmfAnVMNmcnL28rzM",
+    "lib": "libxml2"
+  },
+  "wayland": {
+    "url": "git+https://github.com/allyourcodebase/wayland.git?ref=1.24.0#81e326d17ba86f6c542dae4005492d4ef442a247",
+    "hash": "wayland-1.24.0-dxEBa1RlAADWioAm9uitlZSL68YDDxbLrPrULEzahLxw",
+    "lib": "wayland"
+  },
+  "libxkbcommon": {
+    "url": "git+https://github.com/allyourcodebase/libxkbcommon.git?ref=1.13.1#8c31126430bec39d2cb5f06aa3c2667e006b32ea",
+    "hash": "libxkbcommon-1.13.1-93LaF2x7AgDgSrr8xjRYrYGhtGhJKcZMuID3M95APvl1",
+    "lib": "libxkbcommon"
+  },
+  "gifsicle": {
+    "url": "git+https://github.com/allyourcodebase/gifsicle.git?ref=v1.96#5687f0060e8f35fac4096c537632bd99607b6639",
+    "hash": "libgifsicle-1.96.0+zig-pPkBSGdjAAAn3C3A92k_sCMn5_46j86qfjnwuZrZursh",
+    "lib": "gifsicle"
+  },
+  "libuv": {
+    "url": "git+https://github.com/allyourcodebase/libuv.git?ref=v1.51.0#42b4759ef96ea7ca892f8e90ccf71065a435f99a",
+    "hash": "libuv-1.51.0-htqqvwFnAACFBo-O65-KUmJ_eLGiFylpkBBvlSgKYgba",
+    "lib": "libuv"
+  },
+  "zfp": {
+    "url": "git+https://github.com/allyourcodebase/zfp.git?ref=v1.0.1#08c8d6bcc9f20d3bcbb11be5fb3ab21a4d4b3289",
+    "hash": "zfp-1.0.1-NYn6IaMUAADVSLLvIJ-IA4p2j7xJY0eNEctcCVNLErwR",
+    "lib": "zfp"
+  },
+  "libunwind": {
+    "url": "git+https://github.com/allyourcodebase/libunwind.git?ref=20.1.3#d9cd78b135e06c98541e99df77f2893b3dd6a0a6",
+    "hash": "libunwind-20.1.3-Y-L2YOasCwBYsjbTTL5uYGlg44TA4Ure-JTZKye1DS8y",
+    "lib": "libunwind"
+  },
+  "sdl3": {
+    "url": "git+https://github.com/allyourcodebase/SDL3.git?ref=1.0.0+3.4.4#5a6356ecc66dd5a0b95b0d261baf193489f3e3bc",
+    "hash": "sdl-1.0.0+3.4.4-i4QD0XSAqQBKbp9DITVMlxhI0QRGylegbPhtm-afaUXE",
+    "lib": "sdl3"
+  },
+  "editline": {
+    "url": "git+https://github.com/allyourcodebase/editline.git?ref=1.17.1-2#108c8a1a8798b2566fb1b620b648025cb27b34bf",
+    "hash": "editline-1.17.1-SZoHiwwSAABNmzWWZFqX694f-YONeEsdMm0Fgay6LHVp",
+    "lib": "editline"
+  },
+  "ninja": {
+    "url": "git+https://github.com/allyourcodebase/ninja.git?ref=v1.13.1#28a85bc6afdda0f74472d8d807e4d0975234340b",
+    "hash": "ninja-1.13.1-NfbAxTIkAACopaQUhcoY50utImkagLrDlCYF4HWnNSh0",
+    "lib": "ninja"
+  },
+  "bzip2": {
+    "url": "git+https://github.com/allyourcodebase/bzip2.git?ref=1.0.8#d7668d5ee5eb55489c35632ecf0b0107c7a77569",
+    "hash": "bzip2-1.0.8-m7CPz2QGAADdAt97rbHaz6ekIt864HgHs9rZ3fsYF5Fy",
+    "lib": "bzip2"
+  },
+  "libzip": {
+    "url": "git+https://github.com/allyourcodebase/libzip.git?ref=1.11.2#6e06eaff35303c3ace35c584e0aa543480b24f2f",
+    "hash": "libzip-1.11.2-WX_L8Ck4AADFFAXJ5QvIrrZ9osNgIQJWPgih_6rg8K97",
+    "lib": "libzip"
+  },
+  "libarchive": {
+    "url": "git+https://github.com/allyourcodebase/libarchive.git?ref=3.8.1#fed0c0c8e748dc6e655f5dacdec410e79476ac26",
+    "hash": "libarchive-3.8.1-cV3jE6BcAADS6wNlI-S_tYE7BG9Oak5ba5zdo7bNHYf2",
+    "lib": "libarchive"
+  },
+  "bchunk": {
+    "url": "git+https://github.com/allyourcodebase/bchunk.git?ref=v1.2.2#9dff9e16e1bd2db595cb7c4917e5f0c6693dab3b",
+    "hash": "bchunk-1.2.2-f2msj2wFAAA42WoPSonJ7CRWHdReNJfezDQd4AdkE6GW",
+    "lib": "bchunk"
+  },
+  "grpc": {
+    "url": "git+https://github.com/allyourcodebase/grpc.git?ref=1.80.0#51de78ce80eefb90909eee519edc45b2bc31a421",
+    "hash": "grpc-1.80.0-1lXNFY9tAQAsi6p6hhvrjDyQibkAjexjC6ptsNZilVlL",
+    "lib": "grpc"
+  },
+  "libffi": {
+    "url": "git+https://github.com/allyourcodebase/libffi.git?ref=v3.5.2#ffafa43e55e19323ac85ec1ccd34cc58e272b784",
+    "hash": "libffi-3.5.2-QhHaJyYYAAA1JzdzpVppCdz543jMEJGazBWhRR_FMvRg",
+    "lib": "libffi"
+  },
+  "libdrm": {
+    "url": "git+https://github.com/allyourcodebase/libdrm.git?ref=v2.4.131#35489e1431a0d05eed750da0b55d4719f6e9dfc0",
+    "hash": "libdrm-2.4.131-J31yV3AgAADybDJfQliVP46aB46wuFlXt571bcLVvhNF",
+    "lib": "libdrm"
+  },
+  "lcms2": {
+    "url": "git+https://github.com/allyourcodebase/lcms2.git?ref=v2.18.0#66c7c0ef0a9bd29a5f78aeff797bf541d0b91624",
+    "hash": "lcms2-2.18.0-CNsMs50PAAAbhEQvq2uI5_O2vqgvYXvcDKwFw8QbzKSk",
+    "lib": "lcms2"
+  },
+  "libseat": {
+    "url": "git+https://github.com/allyourcodebase/libseat.git?ref=v0.9.3#69dafe9e7fcd93769477b9b024b95bb6d59dda2b",
+    "hash": "libseat-0.9.3-ehu9wg4PAAAcdcyH5glmt3s64a6X7kXSk-SqZnir-PUS",
+    "lib": "libseat"
+  },
+  "libdisplay_info": {
+    "url": "git+https://github.com/allyourcodebase/libdisplay-info.git?ref=v0.3.0#3fda1fb93284c7cf284a55f5be4cd0c8d9698ccc",
+    "hash": "libdisplay_info-0.3.0-Kg3HjrAXAADu9qCXptzTuaqzL43r5ryDrYZXmyolCuUt",
+    "lib": "libdisplay_info"
+  },
+  "xkbcommon": {
+    "url": "git+https://github.com/allyourcodebase/xkbcommon.git?ref=v1.31.1#e9ebf5c40a437be0423e981ea898ed3530f6b998",
+    "hash": "xkbcommon-1.13.1-gwljwTZSAACow_g5Kdrdl6w4dzmBS4U0jnKiFsF2uqvL",
+    "lib": "xkbcommon"
+  },
+  "wayland_protocols": {
+    "url": "git+https://github.com/allyourcodebase/wayland-protocols.git?ref=v1.47.0#51df3b24e48fab8a4cae95639063398d99448668",
+    "hash": "wayland_protocols-1.47.0-qTDUBZsKAAA5hD-F27-Ue9FtT2g3WYgTKTiDbCkkbbQo",
+    "lib": "wayland_protocols"
+  },
+  "libliftoff": {
+    "url": "git+https://github.com/allyourcodebase/libliftoff.git?ref=v0.5.0#e018173ce153b830280a5b817077f8bf2f860dc0",
+    "hash": "libliftoff-0.5.0-EFhKkrgOAAC6qf0-7U-DRIv-aQrLkykacrKjrB3zBeVU",
+    "lib": "libliftoff"
+  },
+  "epoll_shim": {
+    "url": "git+https://github.com/allyourcodebase/epoll-shim.git?ref=v0.0.20240608#0aa594e11f2d841f2edf1754264d532d5ed363c5",
+    "hash": "epoll_shim-0.0.20240608-F353TPwXAABFkykwyzxbQ0VqWalptsK-35h8Ya9SLGl-",
+    "lib": "epoll_shim"
+  },
+  "wlroots": {
+    "url": "git+https://github.com/allyourcodebase/wlroots.git?ref=v0.20.0#fea057e464b44e1629b1d343e0d287d627059bbf",
+    "hash": "wlroots-0.20.0-17hdY1yQAAAVCqRuvrig5yiqzsqRzmyJTq_a5aQvOu8A",
+    "lib": "wlroots"
   }
 }
