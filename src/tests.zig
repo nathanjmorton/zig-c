@@ -574,7 +574,7 @@ test "init: creates all expected files with correct content" {
 
     // src/main.c
     try hasContent(src, "main.c", "#include <stdio.h>");
-    try hasContent(src, "main.c", "Hello from my-project!");
+    try hasContent(src, "main.c", "\"my-project\"");
 
     // .gitignore
     try hasContent(proj, ".gitignore", ".zig-cache/");

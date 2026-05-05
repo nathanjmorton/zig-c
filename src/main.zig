@@ -92,8 +92,9 @@ const TMPL_BUILD_ZIG_ZON =
 const TMPL_MAIN_C =
     \\#include <stdio.h>
     \\
-    \\int main(void) {
-    \\    printf("Hello from PROJ_NAME!\n");
+    \\int main(int argc, char *argv[]) {
+    \\    const char *name = (argc > 1) ? argv[1] : "PROJ_NAME";
+    \\    printf("Hello from %s!\n", name);
     \\    return 0;
     \\}
     \\
