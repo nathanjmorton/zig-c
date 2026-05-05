@@ -15,6 +15,8 @@ const usage =
     \\  zigc check  [--build]       Verify project integrity
     \\  zigc verify [--symbols]     Inspect object files and symbols
     \\  zigc build  [flags]         Build the current project  (zig build)
+    \\  zigc build  --wasm          Build targeting wasm32-freestanding
+    \\  zigc build  --wasi          Build targeting wasm32-wasi
     \\  zigc run    [flags]         Build and run the project  (zig build run)
     \\  zigc clean                  Remove .zig-cache/ and zig-out/
     \\  zigc help                   Show this help
@@ -33,10 +35,13 @@ const TMPL_BUILD_ZIG =
     \\    const target = b.standardTargetOptions(.{});
     \\    const optimize = b.standardOptimizeOption(.{});
     \\
+    \\    const is_wasm = target.result.cpu.arch == .wasm32 or target.result.cpu.arch == .wasm64;
+    \\    const is_freestanding = target.result.os.tag == .freestanding;
+    \\
     \\    const mod = b.createModule(.{
     \\        .target = target,
     \\        .optimize = optimize,
-    \\        .link_libc = true,
+    \\        .link_libc = !is_freestanding,
     \\    });
     \\
     \\    // Base C flags.  Pass extra ones with -Dcflags=-DFOO,-Werror
@@ -58,11 +63,13 @@ const TMPL_BUILD_ZIG =
     \\    });
     \\    b.installArtifact(exe);
     \\
-    \\    const run_cmd = b.addRunArtifact(exe);
-    \\    run_cmd.step.dependOn(b.getInstallStep());
-    \\    if (b.args) |args| run_cmd.addArgs(args);
-    \\    const run_step = b.step("run", "Build and run");
-    \\    run_step.dependOn(&run_cmd.step);
+    \\    if (!is_wasm) {
+    \\        const run_cmd = b.addRunArtifact(exe);
+    \\        run_cmd.step.dependOn(b.getInstallStep());
+    \\        if (b.args) |args| run_cmd.addArgs(args);
+    \\        const run_step = b.step("run", "Build and run");
+    \\        run_step.dependOn(&run_cmd.step);
+    \\    }
     \\}
     \\
 ;
@@ -99,10 +106,13 @@ const TMPL_BUILD_ZIG_CPP =
     \\    const target = b.standardTargetOptions(.{});
     \\    const optimize = b.standardOptimizeOption(.{});
     \\
+    \\    const is_wasm = target.result.cpu.arch == .wasm32 or target.result.cpu.arch == .wasm64;
+    \\    const is_freestanding = target.result.os.tag == .freestanding;
+    \\
     \\    const mod = b.createModule(.{
     \\        .target = target,
     \\        .optimize = optimize,
-    \\        .link_libcpp = true,
+    \\        .link_libcpp = !is_freestanding,
     \\    });
     \\
     \\    // Base C++ flags.  Pass extra ones with -Dcflags=-DFOO,-Werror
@@ -124,11 +134,13 @@ const TMPL_BUILD_ZIG_CPP =
     \\    });
     \\    b.installArtifact(exe);
     \\
-    \\    const run_cmd = b.addRunArtifact(exe);
-    \\    run_cmd.step.dependOn(b.getInstallStep());
-    \\    if (b.args) |args| run_cmd.addArgs(args);
-    \\    const run_step = b.step("run", "Build and run");
-    \\    run_step.dependOn(&run_cmd.step);
+    \\    if (!is_wasm) {
+    \\        const run_cmd = b.addRunArtifact(exe);
+    \\        run_cmd.step.dependOn(b.getInstallStep());
+    \\        if (b.args) |args| run_cmd.addArgs(args);
+    \\        const run_step = b.step("run", "Build and run");
+    \\        run_step.dependOn(&run_cmd.step);
+    \\    }
     \\}
     \\
 ;
@@ -1287,6 +1299,10 @@ pub fn buildArgv(
             try argv.append(ar, mapped);
         } else if (std.mem.startsWith(u8, arg, "-D") and isBuildOption(arg[2..])) {
             try argv.append(ar, arg); // Zig build option (-Doptimize=…, -Dcflags=…)
+        } else if (std.mem.eql(u8, arg, "--wasm")) {
+            try argv.append(ar, "-Dtarget=wasm32-freestanding");
+        } else if (std.mem.eql(u8, arg, "--wasi")) {
+            try argv.append(ar, "-Dtarget=wasm32-wasi");
         } else if (std.mem.startsWith(u8, arg, "--")) {
             try argv.append(ar, arg); // long zig flags (--verbose, --summary)
         } else if (std.mem.startsWith(u8, arg, "-")) {

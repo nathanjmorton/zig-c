@@ -296,6 +296,31 @@ test "buildArgv: --verbose passes through unchanged" {
     try std.testing.expectEqualStrings("--verbose", argv[2]);
 }
 
+test "buildArgv: --wasm maps to -Dtarget=wasm32-freestanding" {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const argv = try argvFor(arena.allocator(), &.{ "zig", "build" }, &.{"--wasm"});
+    try std.testing.expectEqual(@as(usize, 3), argv.len);
+    try std.testing.expectEqualStrings("-Dtarget=wasm32-freestanding", argv[2]);
+}
+
+test "buildArgv: --wasi maps to -Dtarget=wasm32-wasi" {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const argv = try argvFor(arena.allocator(), &.{ "zig", "build" }, &.{"--wasi"});
+    try std.testing.expectEqual(@as(usize, 3), argv.len);
+    try std.testing.expectEqualStrings("-Dtarget=wasm32-wasi", argv[2]);
+}
+
+test "buildArgv: --wasi with -O3 combines correctly" {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const argv = try argvFor(arena.allocator(), &.{ "zig", "build" }, &.{ "--wasi", "-O3" });
+    try std.testing.expectEqual(@as(usize, 4), argv.len);
+    try std.testing.expectEqualStrings("-Dtarget=wasm32-wasi", argv[2]);
+    try std.testing.expectEqualStrings("-Doptimize=ReleaseFast", argv[3]);
+}
+
 test "buildArgv: no extra flags returns base unchanged" {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
@@ -1088,11 +1113,11 @@ test "init --cpp: build.zig uses link_libcpp and c++17" {
     var proj = try tmp.dir.openDir(io, "cppflags", .{});
     defer proj.close(io);
 
-    try hasContent(proj, "build.zig", ".link_libcpp = true");
+    try hasContent(proj, "build.zig", ".link_libcpp = !is_freestanding");
     try hasContent(proj, "build.zig", "-std=c++17");
     try hasContent(proj, "build.zig", "main.cpp");
     // Must NOT contain C-only markers.
-    try lacksContent(proj, "build.zig", ".link_libc = true");
+    try lacksContent(proj, "build.zig", "link_libc =");
     try lacksContent(proj, "build.zig", "-std=c11");
     // Use quoted form to avoid matching "main.cpp" as a substring of "main.c".
     try lacksContent(proj, "build.zig", "\"main.c\"");
@@ -1113,7 +1138,7 @@ test "init --cpp: C project (no flag) is unchanged" {
     defer src.close(io);
 
     try hasContent(src, "main.c", "#include <stdio.h>");
-    try hasContent(proj, "build.zig", ".link_libc = true");
+    try hasContent(proj, "build.zig", ".link_libc = !is_freestanding");
     try hasContent(proj, "build.zig", "-std=c11");
     try lacksContent(proj, "build.zig", "link_libcpp");
 }
@@ -1140,6 +1165,31 @@ test "init --cpp → build: compiles and produces binary" {
     }
 
     _ = try proj.statFile(io, "zig-out/bin/cppbuilder", .{});
+}
+
+test "init → build --wasi: produces .wasm binary" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "wasmtest" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    var proj = try tmp.dir.openDir(io, "wasmtest", .{});
+    defer proj.close(io);
+
+    {
+        const r = try runIn(proj, &.{ zig_c_path, "build", "--wasi" });
+        defer gpa.free(r.stdout);
+        defer gpa.free(r.stderr);
+        try ok(r);
+    }
+
+    // WASM targets produce files with .wasm extension.
+    _ = try proj.statFile(io, "zig-out/bin/wasmtest.wasm", .{});
 }
 
 test "init --cpp → run: binary prints expected greeting" {
