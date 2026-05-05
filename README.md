@@ -220,7 +220,59 @@ Pass `--symbols` to print the first 50 defined symbols with type codes (`T`=code
 zigc verify --symbols
 ```
 
-### 7 — Clean build artifacts
+### 7 — Build for WebAssembly
+
+`zigc` can cross-compile C and C++ projects to WebAssembly with a single flag.
+
+**Install a WASM runtime** (one-time):
+
+```sh
+brew install wasmtime
+```
+
+**Create a project and build for WASI:**
+
+```sh
+zigc init hello-wasm
+cd hello-wasm
+zigc build --wasi
+```
+
+This produces `zig-out/bin/hello-wasm.wasm` — a WASI executable with wasi-libc linked. Standard C I/O (`printf`, `argc`/`argv`, file access) works out of the box.
+
+**Run it:**
+
+```sh
+wasmtime zig-out/bin/hello-wasm.wasm
+```
+
+```
+Hello from hello-wasm!
+```
+
+Pass arguments directly after the `.wasm` file:
+
+```sh
+wasmtime zig-out/bin/hello-wasm.wasm Nathan
+```
+
+**Two WASM targets are available:**
+
+| Flag | Target | libc | Use case |
+|---|---|---|---|
+| `--wasi` | `wasm32-wasi` | wasi-libc | Programs that use stdio, malloc, filesystem |
+| `--wasm` | `wasm32-freestanding` | none | Library modules that export functions (no libc) |
+
+`--wasi` is the right choice for most C programs (e.g. compiling sqlite3 to WASM). `--wasm` is for freestanding library modules where you export individual functions and call them from JavaScript or another host.
+
+Both flags combine with other build flags:
+
+```sh
+zigc build --wasi -Os              # optimized for size
+zigc build --wasi -DSQLITE_OMIT_LOAD_EXTENSION   # with C defines
+```
+
+### 8 — Clean build artifacts
 
 ```sh
 zigc clean        # removes .zig-cache/ and zig-out/
@@ -251,6 +303,8 @@ Both commands accept flags that are translated or forwarded to `zig build`:
 
 | Flag | Becomes |
 |---|---|
+| `--wasm` | `-Dtarget=wasm32-freestanding` |
+| `--wasi` | `-Dtarget=wasm32-wasi` |
 | `-O3`, `-O2`, `-O1`, `-Ofast` | `-Doptimize=ReleaseFast` |
 | `-Os` | `-Doptimize=ReleaseSmall` |
 | `-Og`, `-O` | `-Doptimize=ReleaseSafe` |
