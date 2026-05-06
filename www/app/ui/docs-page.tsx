@@ -80,7 +80,12 @@ export function DocsPage() {
             <CodeBlock copy="zigc upgrade" lines={['zigc upgrade']} />
             <P>
               Checks GitHub for the latest release, compares to the current version, and downloads
-              the correct binary for your platform. Replaces the existing binary in-place.
+              the correct binary for your platform. Replaces the binary in-place wherever it lives on
+              your <Code>PATH</Code> — works with both the shell script install and build-from-source.
+            </P>
+            <P>
+              If you installed via Homebrew, <Code>zigc upgrade</Code> will detect it and tell you to
+              use <Code>brew upgrade zigc</Code> instead.
             </P>
           </Section>
 
