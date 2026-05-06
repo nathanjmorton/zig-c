@@ -1,5 +1,9 @@
 const std = @import("std");
 
+// ── Version ───────────────────────────────────────────────────────────────────
+
+const VERSION = "0.1.0";
+
 // ── Usage ─────────────────────────────────────────────────────────────────────
 
 const usage =
@@ -7,7 +11,7 @@ const usage =
     \\
     \\Usage:
     \\  zigc init   <name> [--cpp]  Create a new C (or C++) project in ./<name>/
-    \\  zigc add    <name|url> [--lib n]  Add a dependency (registry name or URL)
+    \\  zigc add    <name|url> [--lib n] [--header-only]  Add a dependency
     \\  zigc remove <name>          Remove a dependency
     \\  zigc list                   List installed dependencies
     \\  zigc registry update        Fetch the latest package registry
@@ -19,6 +23,7 @@ const usage =
     \\  zigc build  --wasi          Build targeting wasm32-wasi
     \\  zigc run    [flags]         Build and run the project  (zig build run)
     \\  zigc clean                  Remove .zig-cache/ and zig-out/
+    \\  zigc upgrade                Upgrade zigc to the latest release
     \\  zigc help                   Show this help
     \\
 ;
@@ -512,6 +517,38 @@ pub fn insertBuildLink(allocator: std.mem.Allocator, build_zig: []const u8, key:
     return std.mem.concat(allocator, u8, &.{ build_zig[0..ins], snippet, build_zig[ins..] });
 }
 
+/// Insert `b.dependency` + `mod.addIncludePath` calls for header-only deps.
+/// Placed just before `const exe = b.addExecutable`.  No-op if `key_dep`
+/// already appears in the file.
+pub fn insertBuildInclude(allocator: std.mem.Allocator, build_zig: []const u8, key: []const u8, include_subdir: []const u8) ![]u8 {
+    // Idempotency guard.
+    const var_name = try std.fmt.allocPrint(allocator, "{s}_dep", .{key});
+    defer allocator.free(var_name);
+    if (std.mem.indexOf(u8, build_zig, var_name) != null) return allocator.dupe(u8, build_zig);
+
+    const MARKER = "const exe = b.addExecutable";
+    var ins = std.mem.indexOf(u8, build_zig, MARKER) orelse return allocator.dupe(u8, build_zig);
+    while (ins > 0 and build_zig[ins - 1] != '\n') ins -= 1;
+
+    const snippet = if (include_subdir.len > 0)
+        try std.fmt.allocPrint(allocator,
+            \\    const {s}_dep = b.dependency("{s}", .{{ .target = target, .optimize = optimize }});
+            \\    mod.addIncludePath({s}_dep.path("{s}"));
+            \\
+            \\
+        , .{ key, key, key, include_subdir })
+    else
+        try std.fmt.allocPrint(allocator,
+            \\    const {s}_dep = b.dependency("{s}", .{{ .target = target, .optimize = optimize }});
+            \\    mod.addIncludePath({s}_dep.path(""));
+            \\
+            \\
+        , .{ key, key, key });
+    defer allocator.free(snippet);
+
+    return std.mem.concat(allocator, u8, &.{ build_zig[0..ins], snippet, build_zig[ins..] });
+}
+
 /// Insert a dependency entry directly into build.zig.zon content (no zig fetch).
 /// The new block looks like:
 ///     .key = .{
@@ -725,18 +762,28 @@ fn insertFingerprint(io: std.Io, allocator: std.mem.Allocator, fp_str: []const u
 
 fn cmdAdd(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len == 0) {
-        std.debug.print("error: missing package name or URL\nUsage: zigc add <name|url> [--lib <lib-name>]\n", .{});
+        std.debug.print("error: missing package name or URL\nUsage: zigc add <name|url> [--lib <lib-name>] [--header-only [subdir]]\n", .{});
         return error.MissingArgument;
     }
     const target = args[0];
 
     // Optional --lib <name> overrides the artifact name (defaults to dep key).
     var lib_override: ?[]const u8 = null;
+    // Optional --header-only [subdir] for header-only deps (include path only, no linking).
+    var header_only = false;
+    var header_include_subdir: []const u8 = "include";
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         if (std.mem.eql(u8, args[i], "--lib") and i + 1 < args.len) {
             lib_override = args[i + 1];
             i += 1;
+        } else if (std.mem.eql(u8, args[i], "--header-only")) {
+            header_only = true;
+            // Optional next arg is the include subdir (default "include")
+            if (i + 1 < args.len and !std.mem.startsWith(u8, args[i + 1], "--")) {
+                header_include_subdir = args[i + 1];
+                i += 1;
+            }
         }
     }
 
@@ -773,12 +820,20 @@ fn cmdAdd(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !v
             return;
         };
         defer allocator.free(build_zig);
-        const updated = try insertBuildLink(allocator, build_zig, key, lib);
+        const updated = if (header_only)
+            try insertBuildInclude(allocator, build_zig, key, header_include_subdir)
+        else
+            try insertBuildLink(allocator, build_zig, key, lib);
         defer allocator.free(updated);
         try cwd.writeFile(io, .{ .sub_path = "build.zig", .data = updated });
 
-        std.debug.print("Added '{s}' from registry and linked in build.zig.\n", .{key});
-        std.debug.print("  artifact: {s}_dep.artifact(\"{s}\")\n", .{ key, lib });
+        if (header_only) {
+            std.debug.print("Added '{s}' from registry (header-only) in build.zig.\n", .{key});
+            std.debug.print("  include: {s}_dep.path(\"{s}\")\n", .{ key, header_include_subdir });
+        } else {
+            std.debug.print("Added '{s}' from registry and linked in build.zig.\n", .{key});
+            std.debug.print("  artifact: {s}_dep.artifact(\"{s}\")\n", .{ key, lib });
+        }
         return;
     }
 
@@ -826,13 +881,21 @@ fn cmdAdd(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !v
     };
     defer allocator.free(build_zig);
 
-    const updated = try insertBuildLink(allocator, build_zig, key, lib);
+    const updated = if (header_only)
+        try insertBuildInclude(allocator, build_zig, key, header_include_subdir)
+    else
+        try insertBuildLink(allocator, build_zig, key, lib);
     defer allocator.free(updated);
     try cwd.writeFile(io, .{ .sub_path = "build.zig", .data = updated });
 
-    std.debug.print("Added '{s}' and linked in build.zig.\n", .{key});
-    std.debug.print("  artifact: {s}_dep.artifact(\"{s}\")\n", .{ key, lib });
-    std.debug.print("  override artifact name with: zigc add <url> --lib <name>\n", .{});
+    if (header_only) {
+        std.debug.print("Added '{s}' (header-only) in build.zig.\n", .{key});
+        std.debug.print("  include: {s}_dep.path(\"{s}\")\n", .{ key, header_include_subdir });
+    } else {
+        std.debug.print("Added '{s}' and linked in build.zig.\n", .{key});
+        std.debug.print("  artifact: {s}_dep.artifact(\"{s}\")\n", .{ key, lib });
+        std.debug.print("  override artifact name with: zigc add <url> --lib <name>\n", .{});
+    }
 }
 
 fn cmdRemove(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
@@ -1540,6 +1603,125 @@ fn cmdClean(io: std.Io) !void {
     }
 }
 
+// ── upgrade command ──────────────────────────────────────────────────────────
+
+fn cmdUpgrade(io: std.Io, allocator: std.mem.Allocator) !void {
+    const GITHUB_API = "https://api.github.com/repos/nathanjmorton/zigc/releases/latest";
+
+    // 1. Fetch latest release tag from GitHub API.
+    const api_result = try std.process.run(allocator, io, .{
+        .argv = &.{ "curl", "-sfL", "-H", "Accept: application/vnd.github.v3+json", GITHUB_API },
+    });
+    defer allocator.free(api_result.stdout);
+    defer allocator.free(api_result.stderr);
+
+    const api_ok = switch (api_result.term) { .exited => |c| c == 0, else => false };
+    if (!api_ok or api_result.stdout.len == 0) {
+        std.debug.print("error: failed to check for updates\n", .{});
+        return error.FetchFailed;
+    }
+
+    // Extract "tag_name" from the JSON response.
+    const tag = extractJsonString(api_result.stdout, "tag_name") orelse {
+        std.debug.print("error: could not parse latest release\n", .{});
+        return error.ParseFailed;
+    };
+
+    // Strip leading 'v' if present for version comparison.
+    const latest_version = if (tag.len > 0 and tag[0] == 'v') tag[1..] else tag;
+
+    if (std.mem.eql(u8, latest_version, VERSION)) {
+        std.debug.print("zigc is already up to date (v{s})\n", .{VERSION});
+        return;
+    }
+
+    std.debug.print("Upgrading zigc v{s} → {s}\n", .{ VERSION, tag });
+
+    // 2. Detect current platform.
+    const target = comptime detectTarget();
+
+    // 3. Build download URL.
+    const download_url = try std.fmt.allocPrint(allocator,
+        "https://github.com/nathanjmorton/zigc/releases/download/{s}/zigc-{s}.tar.gz",
+        .{ tag, target });
+    defer allocator.free(download_url);
+
+    // 4. Determine where the current binary lives.
+    const self_path = blk: {
+        // Try ZIGC_INSTALL first, then fall back to ~/.zigc/bin/zigc
+        const env_ptr = std.c.getenv("ZIGC_INSTALL");
+        if (env_ptr) |p| {
+            const env = std.mem.sliceTo(p, 0);
+            break :blk try std.fmt.allocPrint(allocator, "{s}/bin/zigc", .{env});
+        }
+        const home_ptr = std.c.getenv("HOME") orelse {
+            std.debug.print("error: HOME not set\n", .{});
+            return error.NoHome;
+        };
+        const home = std.mem.sliceTo(home_ptr, 0);
+        break :blk try std.fmt.allocPrint(allocator, "{s}/.zigc/bin/zigc", .{home});
+    };
+    defer allocator.free(self_path);
+
+    // 5. Download to a temp file and extract.
+    const tmp_tar = try std.fmt.allocPrint(allocator, "{s}.tar.gz", .{self_path});
+    defer allocator.free(tmp_tar);
+
+    const dl_result = try std.process.run(allocator, io, .{
+        .argv = &.{ "curl", "-fL", "--progress-bar", "-o", tmp_tar, download_url },
+    });
+    defer allocator.free(dl_result.stdout);
+    defer allocator.free(dl_result.stderr);
+
+    const dl_ok = switch (dl_result.term) { .exited => |c| c == 0, else => false };
+    if (!dl_ok) {
+        std.debug.print("error: failed to download {s}\n", .{download_url});
+        return error.DownloadFailed;
+    }
+
+    // Extract the binary, overwriting the existing one.
+    const bin_dir = self_path[0 .. std.mem.lastIndexOfScalar(u8, self_path, '/') orelse 0];
+    const extract_result = try std.process.run(allocator, io, .{
+        .argv = &.{ "tar", "-xzf", tmp_tar, "-C", bin_dir },
+    });
+    defer allocator.free(extract_result.stdout);
+    defer allocator.free(extract_result.stderr);
+
+    const extract_ok = switch (extract_result.term) { .exited => |c| c == 0, else => false };
+    if (!extract_ok) {
+        std.debug.print("error: failed to extract update\n", .{});
+        return error.ExtractFailed;
+    }
+
+    // Clean up the tarball.
+    const cwd = std.Io.Dir.cwd();
+    cwd.deleteFile(io, tmp_tar) catch {};
+
+    // Make executable.
+    const chmod_result = try std.process.run(allocator, io, .{
+        .argv = &.{ "chmod", "+x", self_path },
+    });
+    defer allocator.free(chmod_result.stdout);
+    defer allocator.free(chmod_result.stderr);
+
+    std.debug.print("zigc upgraded to {s}\n", .{tag});
+}
+
+/// Detect the Zig target triple for the current platform at comptime.
+fn detectTarget() []const u8 {
+    const arch = @import("builtin").cpu.arch;
+    const os = @import("builtin").os.tag;
+    if (os == .macos) {
+        if (arch == .aarch64) return "aarch64-macos";
+        if (arch == .x86_64) return "x86_64-macos";
+    }
+    if (os == .linux) {
+        if (arch == .aarch64) return "aarch64-linux-gnu";
+        if (arch == .x86_64) return "x86_64-linux-gnu";
+    }
+    @compileError("unsupported platform for zigc upgrade");
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 // Zig 0.16.0: main receives std.process.Init which provides gpa, io, and args.
 
@@ -1590,6 +1772,8 @@ pub fn main(init: std.process.Init) !void {
         }
     } else if (std.mem.eql(u8, cmd, "clean")) {
         try cmdClean(io);
+    } else if (std.mem.eql(u8, cmd, "upgrade")) {
+        try cmdUpgrade(io, allocator);
     } else if (std.mem.eql(u8, cmd, "help") or
         std.mem.eql(u8, cmd, "--help") or
         std.mem.eql(u8, cmd, "-h"))

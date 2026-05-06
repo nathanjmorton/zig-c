@@ -2,3 +2,4 @@
 zig-out/
 hello
 zig-pkg/
+www/node_modules/

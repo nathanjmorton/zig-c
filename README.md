@@ -15,6 +15,9 @@ zigc/
 ├── src/
 │   ├── main.zig      # All commands, parsers, and integrity helpers
 │   └── tests.zig     # Unit (pure functions) + integration (full CLI) tests
+├── www/              # Remix 3 website (zigc landing page + docs)
+├── .github/workflows/release.yml  # CI: cross-compile + GitHub release on tag push
+├── install.sh        # curl | bash installer
 ├── build.zig         # Zig build script for zigc itself
 ├── build.zig.zon     # Package manifest (depends on lz4 for the hello.c demo)
 ├── registry.json     # Package registry: friendly name → url + hash + lib
@@ -50,15 +53,30 @@ zigc/
 ## Installation
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash
+```
+
+The installer detects your platform (macOS/Linux, arm64/x86_64), downloads the correct binary from [GitHub releases](https://github.com/nathanjmorton/zigc/releases), and places it at `~/.zigc/bin/zigc`.
+
+To install a specific version:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash -s v0.1.0
+```
+
+### Build from source
+
+```sh
 git clone https://github.com/nathanjmorton/zigc
 cd zigc
 zig build -Doptimize=ReleaseFast
+export PATH="$PWD/zig-out/bin:$PATH"
 ```
 
-The binary lands at `zig-out/bin/zigc`. Add it to your `PATH`:
+### Upgrade
 
 ```sh
-export PATH="$PWD/zig-out/bin:$PATH"
+zigc upgrade
 ```
 
 ---
@@ -295,6 +313,7 @@ zigc clean        # removes .zig-cache/ and zig-out/
 | `zigc build [flags]` | Compile the project (`zig build`) |
 | `zigc run [flags]` | Compile and run (`zig build run`) |
 | `zigc clean` | Remove `.zig-cache/` and `zig-out/` |
+| `zigc upgrade` | Update zigc to the latest release |
 | `zigc help` | Print usage |
 
 ### `zigc build` / `zigc run` — flag passthrough
