@@ -128,6 +128,37 @@ function InstallBlock() {
       <div
         mix={css({
           display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          justifyContent: 'center',
+          fontSize: '13px',
+          color: 'var(--text-tertiary)',
+        })}
+      >
+        <span>or</span>
+      </div>
+      <code
+        mix={css({
+          display: 'block',
+          background: 'var(--surface-3)',
+          border: '1px solid var(--border)',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          fontSize: '14px',
+          lineHeight: 1.5,
+          color: 'var(--text-primary)',
+          overflowX: 'auto',
+          whiteSpace: 'nowrap',
+          textAlign: 'left',
+        })}
+      >
+        <span mix={css({ color: 'var(--text-tertiary)' })}>$</span> brew tap nathanjmorton/zigc
+        {'\n'}
+        <span mix={css({ color: 'var(--text-tertiary)' })}>$</span> brew install zigc
+      </code>
+      <div
+        mix={css({
+          display: 'flex',
           gap: '12px',
           justifyContent: 'center',
           fontSize: '13px',

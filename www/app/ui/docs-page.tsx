@@ -138,59 +138,20 @@ export function DocsPage() {
             ))}
           </Section>
 
-          <Section title="Homebrew (future)">
-            <P>
-              zigc is not yet in Homebrew. When it is, you'll be able to install with:
-            </P>
+          <Section title="Homebrew">
             <CodeBlock lines={[
               'brew tap nathanjmorton/zigc',
               'brew install zigc',
             ]} />
             <P>
-              A template formula is below. To create a tap, make a repo called{' '}
-              <Code>homebrew-zigc</Code> and place this in <Code>Formula/zigc.rb</Code>:
+              Upgrade via Homebrew:
             </P>
-            <CodeBlock lines={[
-              'class Zigc < Formula',
-              '  desc "C/C++ project & package manager powered by Zig"',
-              '  homepage "https://github.com/nathanjmorton/zigc"',
-              '  version "0.1.0"',
-              '  license "MIT"',
-              '',
-              '  on_macos do',
-              '    on_arm do',
-              '      url "https://github.com/nathanjmorton/zigc/releases/download/v#{version}/zigc-aarch64-macos.tar.gz"',
-              '      # sha256 "HASH"',
-              '    end',
-              '    on_intel do',
-              '      url "https://github.com/nathanjmorton/zigc/releases/download/v#{version}/zigc-x86_64-macos.tar.gz"',
-              '      # sha256 "HASH"',
-              '    end',
-              '  end',
-              '',
-              '  on_linux do',
-              '    on_arm do',
-              '      url "https://github.com/nathanjmorton/zigc/releases/download/v#{version}/zigc-aarch64-linux-gnu.tar.gz"',
-              '      # sha256 "HASH"',
-              '    end',
-              '    on_intel do',
-              '      url "https://github.com/nathanjmorton/zigc/releases/download/v#{version}/zigc-x86_64-linux-gnu.tar.gz"',
-              '      # sha256 "HASH"',
-              '    end',
-              '  end',
-              '',
-              '  def install',
-              '    bin.install "zigc"',
-              '  end',
-              '',
-              '  test do',
-              '    system "#{bin}/zigc", "help"',
-              '  end',
-              'end',
-            ]} />
+            <CodeBlock lines={['brew upgrade zigc']} />
             <P>
-              <strong>Note:</strong> If installed via Homebrew, use <Code>brew upgrade zigc</Code>{' '}
-              instead of <Code>zigc upgrade</Code> to avoid version conflicts.
+              <strong>Note:</strong> If you installed via Homebrew, use <Code>brew upgrade zigc</Code>{' '}
+              instead of <Code>zigc upgrade</Code> to avoid version conflicts. The two install
+              methods use different paths (<Code>/opt/homebrew/bin</Code> vs <Code>~/.zigc/bin</Code>)
+              so they won't shadow each other, but stick with one upgrade method.
             </P>
           </Section>
 
