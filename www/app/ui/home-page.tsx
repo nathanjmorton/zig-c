@@ -26,7 +26,7 @@ export function HomePage() {
           href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap"
         />
         <script type="module" src={routes.assets.href({ path: 'app/assets/entry.ts' })}></script>
-        <script dangerouslySetInnerHTML={{ __html: COPY_SCRIPT }} />
+        <script src={routes.copyScript.href()}></script>
       </head>
       <body mix={css(bodyStyles)}>
         <main mix={css(mainStyles)}>
@@ -125,7 +125,7 @@ function InstallBlock() {
         <span>or</span>
       </div>
       <CopyBlock
-        command={"brew tap nathanjmorton/zigc && brew install zigc"}
+        command={"brew tap nathanjmorton/zigc \x26\x26 brew install zigc"}
         display={"$ brew tap nathanjmorton/zigc\n$ brew install zigc"}
       />
       <div
@@ -386,26 +386,3 @@ function CopyBlock() {
   )
 }
 
-const COPY_SCRIPT = `
-document.addEventListener('click', function(e) {
-  var el = e.target.closest('[data-copy]');
-  if (!el) return;
-  var text = el.getAttribute('data-copy');
-  navigator.clipboard.writeText(text).then(function() {
-    var orig = el.getAttribute('data-orig-after');
-    if (!orig) el.setAttribute('data-orig-after', '');
-    el.style.setProperty('--copied', '1');
-    el.classList.add('copied');
-    var span = el.querySelector('.copy-feedback');
-    if (!span) {
-      span = document.createElement('span');
-      span.className = 'copy-feedback';
-      span.style.cssText = 'position:absolute;top:8px;right:12px;font-size:11px;color:var(--accent);';
-      span.textContent = 'Copied!';
-      el.appendChild(span);
-    }
-    span.style.opacity = '1';
-    setTimeout(function() { span.style.opacity = '0'; }, 1500);
-  });
-});
-`

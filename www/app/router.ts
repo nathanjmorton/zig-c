@@ -29,5 +29,31 @@ router.get(routes.install, async () => {
   })
 })
 
+router.get(routes.copyScript, () => {
+  return new Response(COPY_JS, {
+    headers: { 'Content-Type': 'application/javascript; charset=utf-8' },
+  })
+})
+
 router.map(routes.home, home)
 router.map(routes.docs, docs)
+
+const COPY_JS = `
+document.addEventListener('click', function(e) {
+  var el = e.target.closest('[data-copy]');
+  if (!el) return;
+  var text = el.getAttribute('data-copy');
+  navigator.clipboard.writeText(text).then(function() {
+    var span = el.querySelector('.copy-feedback');
+    if (!span) {
+      span = document.createElement('span');
+      span.className = 'copy-feedback';
+      span.style.cssText = 'position:absolute;top:8px;right:12px;font-size:11px;color:var(--accent);transition:opacity 150ms ease;pointer-events:none;';
+      el.appendChild(span);
+    }
+    span.textContent = 'Copied!';
+    span.style.opacity = '1';
+    setTimeout(function() { span.style.opacity = '0'; }, 1500);
+  });
+});
+`

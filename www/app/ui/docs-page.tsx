@@ -20,7 +20,7 @@ export function DocsPage() {
           href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap"
         />
         <script type="module" src={routes.assets.href({ path: 'app/assets/entry.ts' })}></script>
-        <script dangerouslySetInnerHTML={{ __html: COPY_SCRIPT }} />
+        <script src={routes.copyScript.href()}></script>
       </head>
       <body mix={css(bodyStyles)}>
         <nav mix={css(navStyles)}>
@@ -31,7 +31,7 @@ export function DocsPage() {
           <h1 mix={css({ margin: 0, fontSize: '32px', fontWeight: 700 })}>Documentation</h1>
 
           <Section title="Homebrew">
-            <CodeBlock copy="brew tap nathanjmorton/zigc && brew install zigc" lines={[
+            <CodeBlock copy={"brew tap nathanjmorton/zigc \x26\x26 brew install zigc"} lines={[
               'brew tap nathanjmorton/zigc',
               'brew install zigc',
             ]} />
@@ -65,7 +65,7 @@ export function DocsPage() {
           </Section>
 
           <Section title="Build from source">
-            <CodeBlock copy="git clone https://github.com/nathanjmorton/zigc && cd zigc && zig build -Doptimize=ReleaseFast" lines={[
+            <CodeBlock copy={"git clone https://github.com/nathanjmorton/zigc \x26\x26 cd zigc \x26\x26 zig build -Doptimize=ReleaseFast"} lines={[
               'git clone https://github.com/nathanjmorton/zigc',
               'cd zigc',
               'zig build -Doptimize=ReleaseFast',
@@ -96,7 +96,7 @@ export function DocsPage() {
             <CodeBlock copy="zigc build" lines={['zigc build', 'zigc run']} />
 
             <H3>Add a dependency</H3>
-            <CodeBlock copy="zigc registry update && zigc add lz4" lines={[
+            <CodeBlock copy={"zigc registry update \x26\x26 zigc add lz4"} lines={[
               'zigc registry update           # fetch package registry (first time)',
               'zigc add lz4                    # resolve from registry',
               'zigc add git+https://github.com/allyourcodebase/lz4.git#1.10.0-6   # or by URL',
@@ -108,7 +108,7 @@ export function DocsPage() {
             </P>
 
             <H3>Inspect and verify</H3>
-            <CodeBlock copy="zigc check --build && zigc verify --symbols" lines={['zigc check --build', 'zigc verify --symbols']} />
+            <CodeBlock copy={"zigc check --build \x26\x26 zigc verify --symbols"} lines={['zigc check --build', 'zigc verify --symbols']} />
 
             <H3>Cross-compile to WASM</H3>
             <CodeBlock copy="zigc build --wasi" lines={['zigc build --wasi', 'wasmtime zig-out/bin/my-app.wasm']} />
@@ -246,27 +246,7 @@ function CodeBlock() {
   )
 }
 
-const COPY_SCRIPT = `
-document.addEventListener('click', function(e) {
-  var el = e.target.closest('[data-copy]');
-  if (!el) return;
-  var text = el.getAttribute('data-copy');
-  navigator.clipboard.writeText(text).then(function() {
-    var span = el.querySelector('.copy-feedback');
-    if (!span) {
-      span = document.createElement('span');
-      span.className = 'copy-feedback';
-      span.style.cssText = 'position:absolute;top:8px;right:12px;font-size:11px;color:var(--accent);transition:opacity 150ms ease;';
-      el.appendChild(span);
-    }
-    span.textContent = 'Copied!';
-    span.style.opacity = '1';
-    setTimeout(function() { span.style.opacity = '0'; }, 1500);
-  });
-});
-`
-
-// ── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles
 
 const bodyStyles = {
   '--surface-0': '#0c0d10',

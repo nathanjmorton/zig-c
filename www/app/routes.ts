@@ -5,4 +5,5 @@ export const routes = route({
   home: '/',
   docs: '/docs',
   install: get('/install.sh'),
+  copyScript: get('/copy.js'),
 })
