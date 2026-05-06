@@ -97,6 +97,24 @@ export function DocsPage() {
               <Code>src/main.c</Code>, and <Code>.gitignore</Code>. Use <Code>--cpp</Code> for C++.
             </P>
 
+            <H3>Create from TypeScript</H3>
+            <CodeBlock copy={"zigc init my-app --ts \x26\x26 cd my-app \x26\x26 zigc run"} lines={['zigc init my-app --ts', 'cd my-app', 'zigc run']} />
+            <P>
+              Requires <A href="https://zigtsc.nathanjmorton.com">zigtsc</A>. Writes <Code>main.ts</Code>,
+              calls zigtsc to generate C++ class files, then creates a C entrypoint with{' '}
+              <Code>extern "C"</Code> bridge wrappers. The split is automatic:
+            </P>
+            <CodeBlock lines={[
+              'Interfaces  → C struct in main.c',
+              'Classes     → C++ .h/.cpp with extern "C" bridge',
+              'Entrypoint  → C (main.c)',
+            ]} />
+            <P>
+              Output: <Code>src/main.c</Code> (Point struct + Counter bridge calls),{' '}
+              <Code>src/Counter.h</Code>, <Code>src/Counter.cpp</Code>.
+              The build compiles both C and C++ sources and statically links them.
+            </P>
+
             <H3>Build and run</H3>
             <CodeBlock copy="zigc build" lines={['zigc build', 'zigc run']} />
 
@@ -124,7 +142,7 @@ export function DocsPage() {
 
           <Section title="Command reference">
             {[
-              ['zigc init <name> [--cpp]', 'Scaffold a new C/C++ project'],
+              ['zigc init <name> [--cpp] [--ts]', 'Scaffold a new project (--ts for TypeScript via zigtsc)'],
               ['zigc add <name|url> [--lib n]', 'Add a dependency by registry name or URL'],
               ['zigc remove <name>', 'Remove a dependency from manifest and build.zig'],
               ['zigc list', 'Show all declared dependencies and pinned URLs'],

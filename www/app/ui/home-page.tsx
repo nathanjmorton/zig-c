@@ -109,8 +109,8 @@ function InstallBlock() {
       })}
     >
       <CopyBlock
-        command="curl -fsSL https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash"
-        display="$ curl -fsSL https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash"
+        command={"brew tap nathanjmorton/zigc \x26\x26 brew install zigc"}
+        display={"$ brew tap nathanjmorton/zigc\n$ brew install zigc"}
       />
       <div
         mix={css({
@@ -125,8 +125,8 @@ function InstallBlock() {
         <span>or</span>
       </div>
       <CopyBlock
-        command={"brew tap nathanjmorton/zigc \x26\x26 brew install zigc"}
-        display={"$ brew tap nathanjmorton/zigc\n$ brew install zigc"}
+        command="curl -fsSL https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash"
+        display="$ curl -fsSL https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash"
       />
       <div
         mix={css({
@@ -213,36 +213,10 @@ function QuickStart() {
   return () => (
     <section aria-label="Quick start" mix={css({ width: '100%' })}>
       <h2 mix={css(sectionHeadingStyles)}>Quick start</h2>
-      <div
-        mix={css({
-          background: 'var(--surface-3)',
-          borderRadius: '16px',
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '4px',
-        })}
-      >
-        {[
-          'zigc init my-app',
-          'cd my-app',
-          'zigc add lz4',
-          'zigc build -O3',
-          'zigc run',
-        ].map((line) => (
-          <code
-            mix={css({
-              display: 'block',
-              fontSize: '13px',
-              lineHeight: 1.8,
-              color: 'var(--text-primary)',
-              '&::before': { content: '"$ "', color: 'var(--text-tertiary)' },
-            })}
-          >
-            {line}
-          </code>
-        ))}
-      </div>
+      <CopyBlock
+        command={"zigc init my-app \x26\x26 cd my-app \x26\x26 zigc add lz4 \x26\x26 zigc build -O3 \x26\x26 zigc run"}
+        display={"$ zigc init my-app\n$ cd my-app\n$ zigc add lz4\n$ zigc build -O3\n$ zigc run"}
+      />
       <p
         mix={css({
           marginTop: '16px',
