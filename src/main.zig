@@ -1646,22 +1646,28 @@ fn cmdUpgrade(io: std.Io, allocator: std.mem.Allocator) !void {
         .{ tag, target });
     defer allocator.free(download_url);
 
-    // 4. Determine where the current binary lives.
-    const self_path = blk: {
-        // Try ZIGC_INSTALL first, then fall back to ~/.zigc/bin/zigc
-        const env_ptr = std.c.getenv("ZIGC_INSTALL");
-        if (env_ptr) |p| {
-            const env = std.mem.sliceTo(p, 0);
-            break :blk try std.fmt.allocPrint(allocator, "{s}/bin/zigc", .{env});
-        }
-        const home_ptr = std.c.getenv("HOME") orelse {
-            std.debug.print("error: HOME not set\n", .{});
-            return error.NoHome;
-        };
-        const home = std.mem.sliceTo(home_ptr, 0);
-        break :blk try std.fmt.allocPrint(allocator, "{s}/.zigc/bin/zigc", .{home});
-    };
-    defer allocator.free(self_path);
+    // 4. Find the actual binary location via `which zigc`.
+    const which_result = try std.process.run(allocator, io, .{
+        .argv = &.{ "which", "zigc" },
+    });
+    defer allocator.free(which_result.stdout);
+    defer allocator.free(which_result.stderr);
+
+    const which_ok = switch (which_result.term) { .exited => |c| c == 0, else => false };
+    if (!which_ok or which_result.stdout.len == 0) {
+        std.debug.print("error: could not find zigc on PATH\n", .{});
+        return error.NotFound;
+    }
+    const self_path = std.mem.trimEnd(u8, which_result.stdout, "\n\r ");
+
+    // Detect Homebrew installs and warn the user.
+    if (std.mem.indexOf(u8, self_path, "/homebrew/") != null or
+        std.mem.indexOf(u8, self_path, "/Cellar/") != null)
+    {
+        std.debug.print("zigc is installed via Homebrew ({s}).\n", .{self_path});
+        std.debug.print("Use 'brew upgrade zigc' instead of 'zigc upgrade'.\n", .{});
+        return;
+    }
 
     // 5. Download to a temp file and extract.
     const tmp_tar = try std.fmt.allocPrint(allocator, "{s}.tar.gz", .{self_path});
