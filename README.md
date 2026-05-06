@@ -1,8 +1,8 @@
 # zigc
 
-A C project and package manager built on top of [Zig's build system](https://ziglang.org/learn/build-system/).
+A C and C++ project and package manager built on top of [Zig's build system](https://ziglang.org/learn/build-system/).
 
-`zigc` handles scaffolding, dependency management, build orchestration, integrity checking, and binary symbol inspection — all without writing a build script by hand.
+`zigc` handles scaffolding, dependency management, build orchestration, integrity checking, and binary symbol inspection for both C and C++ projects — all without writing a build script by hand.
 
 **Requires Zig 0.16.0.**
 
@@ -11,7 +11,7 @@ A C project and package manager built on top of [Zig's build system](https://zig
 ## Project structure
 
 ```
-zig-c/
+zigc/
 ├── src/
 │   ├── main.zig      # All commands, parsers, and integrity helpers
 │   └── tests.zig     # Unit (pure functions) + integration (full CLI) tests
@@ -50,8 +50,8 @@ zig-c/
 ## Installation
 
 ```sh
-git clone https://github.com/nathanjmorton/zig-c
-cd zig-c
+git clone https://github.com/nathanjmorton/zigc
+cd zigc
 zig build -Doptimize=ReleaseFast
 ```
 
@@ -284,7 +284,7 @@ zigc clean        # removes .zig-cache/ and zig-out/
 
 | Command | Description |
 |---|---|
-| `zigc init <name>` | Scaffold a new C project in `./<name>/` |
+| `zigc init <name>` | Scaffold a new C/C++ project in `./<name>/` |
 | `zigc add <name\|url> [--lib <name>]` | Add a dependency by registry name or URL |
 | `zigc remove <name>` | Remove a dependency from the manifest and `build.zig` |
 | `zigc list` | Show all declared dependencies and their pinned URLs |
@@ -343,11 +343,11 @@ The command writes `registry.json` to the current directory. Repos without tags 
 
 ### Registry synchronization workflow
 
-The registry has two sides: a **source file** (`registry.json` in the zig-c repo) and a **local cache** (`~/.zigc/registry.json` on each user's machine).
+The registry has two sides: a **source file** (`registry.json` in the zigc repo) and a **local cache** (`~/.zigc/registry.json` on each user's machine).
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│  Maintainer (one-time, in the zig-c repo checkout)         │
+│  Maintainer (one-time, in the zigc repo checkout)          │
 │                                                            │
 │  export GITHUB_TOKEN=ghp_...                               │
 │  zigc registry generate    # scrapes allyourcodebase       │
@@ -358,7 +358,7 @@ The registry has two sides: a **source file** (`registry.json` in the zig-c repo
                               │
                               ▼
           registry.json on main branch
-          (raw.githubusercontent.com/nathanjmorton/zig-c/main/registry.json)
+          (raw.githubusercontent.com/nathanjmorton/zigc/main/registry.json)
                               │
                     curl (via zigc)
                               │
@@ -372,7 +372,7 @@ The registry has two sides: a **source file** (`registry.json` in the zig-c repo
 ```
 
 - **`zigc registry generate`** — maintainer tool. Scrapes `allyourcodebase`, runs `zig fetch` for each tagged repo, and writes `registry.json` in the current directory. Commit and push this file to make it available to users.
-- **`zigc registry update`** — user tool. Fetches `registry.json` from the zig-c repo’s raw GitHub URL and saves it to `~/.zigc/registry.json`.
+- **`zigc registry update`** — user tool. Fetches `registry.json` from the zigc repo's raw GitHub URL and saves it to `~/.zigc/registry.json`.
 - **`zigc add <name>`** — reads `~/.zigc/registry.json` locally. No network call needed at add time since the URL and hash are pre-computed in the registry.
 
 To refresh the registry with new packages, a maintainer runs `generate`, commits, and pushes. Users then run `update` to pull the latest.
