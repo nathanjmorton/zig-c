@@ -20,6 +20,7 @@ export function DocsPage() {
           href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap"
         />
         <script type="module" src={routes.assets.href({ path: 'app/assets/entry.ts' })}></script>
+        <script dangerouslySetInnerHTML={{ __html: COPY_SCRIPT }} />
       </head>
       <body mix={css(bodyStyles)}>
         <nav mix={css(navStyles)}>
@@ -29,8 +30,25 @@ export function DocsPage() {
         <main mix={css(mainStyles)}>
           <h1 mix={css({ margin: 0, fontSize: '32px', fontWeight: 700 })}>Documentation</h1>
 
-          <Section title="Installation">
-            <CodeBlock lines={[
+          <Section title="Homebrew">
+            <CodeBlock copy="brew tap nathanjmorton/zigc && brew install zigc" lines={[
+              'brew tap nathanjmorton/zigc',
+              'brew install zigc',
+            ]} />
+            <P>
+              Upgrade via Homebrew:
+            </P>
+            <CodeBlock copy="brew upgrade zigc" lines={['brew upgrade zigc']} />
+            <P>
+              <strong>Note:</strong> If you installed via Homebrew, use <Code>brew upgrade zigc</Code>{' '}
+              instead of <Code>zigc upgrade</Code> to avoid version conflicts. The two install
+              methods use different paths (<Code>/opt/homebrew/bin</Code> vs <Code>~/.zigc/bin</Code>)
+              so they won't shadow each other, but stick with one upgrade method.
+            </P>
+          </Section>
+
+          <Section title="Shell script">
+            <CodeBlock copy="curl -fsSL https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash" lines={[
               'curl -fsSL https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash',
             ]} />
             <P>
@@ -41,22 +59,25 @@ export function DocsPage() {
             <P>
               To install a specific version:
             </P>
-            <CodeBlock lines={[
+            <CodeBlock copy="curl -fsSL https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash -s v0.1.0" lines={[
               'curl -fsSL https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash -s v0.1.0',
             ]} />
-            <P>
-              Or build from source (requires <A href="https://ziglang.org/download/">Zig 0.16.0</A>):
-            </P>
-            <CodeBlock lines={[
+          </Section>
+
+          <Section title="Build from source">
+            <CodeBlock copy="git clone https://github.com/nathanjmorton/zigc && cd zigc && zig build -Doptimize=ReleaseFast" lines={[
               'git clone https://github.com/nathanjmorton/zigc',
               'cd zigc',
               'zig build -Doptimize=ReleaseFast',
               'export PATH="$PWD/zig-out/bin:$PATH"',
             ]} />
+            <P>
+              Requires <A href="https://ziglang.org/download/">Zig 0.16.0</A>.
+            </P>
           </Section>
 
           <Section title="Upgrade">
-            <CodeBlock lines={['zigc upgrade']} />
+            <CodeBlock copy="zigc upgrade" lines={['zigc upgrade']} />
             <P>
               Checks GitHub for the latest release, compares to the current version, and downloads
               the correct binary for your platform. Replaces the existing binary in-place.
@@ -65,17 +86,17 @@ export function DocsPage() {
 
           <Section title="Workflow">
             <H3>Create a project</H3>
-            <CodeBlock lines={['zigc init my-app', 'cd my-app']} />
+            <CodeBlock copy="zigc init my-app" lines={['zigc init my-app', 'cd my-app']} />
             <P>
               Scaffolds <Code>build.zig</Code>, <Code>build.zig.zon</Code>,{' '}
               <Code>src/main.c</Code>, and <Code>.gitignore</Code>. Use <Code>--cpp</Code> for C++.
             </P>
 
             <H3>Build and run</H3>
-            <CodeBlock lines={['zigc build', 'zigc run']} />
+            <CodeBlock copy="zigc build" lines={['zigc build', 'zigc run']} />
 
             <H3>Add a dependency</H3>
-            <CodeBlock lines={[
+            <CodeBlock copy="zigc registry update && zigc add lz4" lines={[
               'zigc registry update           # fetch package registry (first time)',
               'zigc add lz4                    # resolve from registry',
               'zigc add git+https://github.com/allyourcodebase/lz4.git#1.10.0-6   # or by URL',
@@ -87,13 +108,13 @@ export function DocsPage() {
             </P>
 
             <H3>Inspect and verify</H3>
-            <CodeBlock lines={['zigc check --build', 'zigc verify --symbols']} />
+            <CodeBlock copy="zigc check --build && zigc verify --symbols" lines={['zigc check --build', 'zigc verify --symbols']} />
 
             <H3>Cross-compile to WASM</H3>
-            <CodeBlock lines={['zigc build --wasi', 'wasmtime zig-out/bin/my-app.wasm']} />
+            <CodeBlock copy="zigc build --wasi" lines={['zigc build --wasi', 'wasmtime zig-out/bin/my-app.wasm']} />
 
             <H3>Clean</H3>
-            <CodeBlock lines={['zigc clean']} />
+            <CodeBlock copy="zigc clean" lines={['zigc clean']} />
           </Section>
 
           <Section title="Command reference">
@@ -138,22 +159,6 @@ export function DocsPage() {
             ))}
           </Section>
 
-          <Section title="Homebrew">
-            <CodeBlock lines={[
-              'brew tap nathanjmorton/zigc',
-              'brew install zigc',
-            ]} />
-            <P>
-              Upgrade via Homebrew:
-            </P>
-            <CodeBlock lines={['brew upgrade zigc']} />
-            <P>
-              <strong>Note:</strong> If you installed via Homebrew, use <Code>brew upgrade zigc</Code>{' '}
-              instead of <Code>zigc upgrade</Code> to avoid version conflicts. The two install
-              methods use different paths (<Code>/opt/homebrew/bin</Code> vs <Code>~/.zigc/bin</Code>)
-              so they won't shadow each other, but stick with one upgrade method.
-            </P>
-          </Section>
 
           <footer mix={css({ paddingTop: '24px', fontSize: '12px', color: 'var(--text-tertiary)', textAlign: 'center' })}>
             <a href={routes.home.href()} mix={css({ color: 'var(--accent)', textDecoration: 'underline', textUnderlineOffset: '2px' })}>
@@ -202,23 +207,64 @@ function Code() {
 }
 
 function CodeBlock() {
-  return ({ lines }: { lines: string[] }) => (
-    <pre mix={css({
-      margin: 0,
-      background: 'var(--surface-3)',
-      borderRadius: '12px',
-      padding: '16px 20px',
-      fontSize: '13px',
-      lineHeight: 1.7,
-      overflowX: 'auto',
-      color: 'var(--text-primary)',
-      whiteSpace: 'pre-wrap',
-      wordBreak: 'break-all',
-    })}>
+  return ({ lines, copy }: { lines: string[]; copy?: string }) => (
+    <pre
+      {...(copy ? { 'data-copy': copy } : {})}
+      mix={css({
+        margin: 0,
+        background: 'var(--surface-3)',
+        borderRadius: '12px',
+        padding: '16px 20px',
+        fontSize: '13px',
+        lineHeight: 1.7,
+        overflowX: 'auto',
+        color: 'var(--text-primary)',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-all',
+        ...(copy ? {
+          cursor: 'pointer',
+          position: 'relative',
+          transition: 'border-color 150ms ease',
+          border: '1px solid transparent',
+          '&:hover': { borderColor: 'var(--accent)' },
+          '&::after': {
+            content: '"click to copy"',
+            position: 'absolute',
+            top: '8px',
+            right: '12px',
+            fontSize: '11px',
+            color: 'var(--text-tertiary)',
+            opacity: 0,
+            transition: 'opacity 150ms ease',
+          },
+          '&:hover::after': { opacity: 1 },
+        } : {}),
+      })}
+    >
       {lines.join('\n')}
     </pre>
   )
 }
+
+const COPY_SCRIPT = `
+document.addEventListener('click', function(e) {
+  var el = e.target.closest('[data-copy]');
+  if (!el) return;
+  var text = el.getAttribute('data-copy');
+  navigator.clipboard.writeText(text).then(function() {
+    var span = el.querySelector('.copy-feedback');
+    if (!span) {
+      span = document.createElement('span');
+      span.className = 'copy-feedback';
+      span.style.cssText = 'position:absolute;top:8px;right:12px;font-size:11px;color:var(--accent);transition:opacity 150ms ease;';
+      el.appendChild(span);
+    }
+    span.textContent = 'Copied!';
+    span.style.opacity = '1';
+    setTimeout(function() { span.style.opacity = '0'; }, 1500);
+  });
+});
+`
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 

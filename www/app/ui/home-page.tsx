@@ -26,6 +26,7 @@ export function HomePage() {
           href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap"
         />
         <script type="module" src={routes.assets.href({ path: 'app/assets/entry.ts' })}></script>
+        <script dangerouslySetInnerHTML={{ __html: COPY_SCRIPT }} />
       </head>
       <body mix={css(bodyStyles)}>
         <main mix={css(mainStyles)}>
@@ -107,24 +108,10 @@ function InstallBlock() {
         gap: '12px',
       })}
     >
-      <code
-        mix={css({
-          display: 'block',
-          background: 'var(--surface-3)',
-          border: '1px solid var(--border)',
-          borderRadius: '12px',
-          padding: '16px 20px',
-          fontSize: '14px',
-          lineHeight: 1.5,
-          color: 'var(--text-primary)',
-          overflowX: 'auto',
-          whiteSpace: 'nowrap',
-          textAlign: 'left',
-        })}
-      >
-        <span mix={css({ color: 'var(--text-tertiary)' })}>$</span> curl -fsSL
-        https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash
-      </code>
+      <CopyBlock
+        command="curl -fsSL https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash"
+        display="$ curl -fsSL https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh | bash"
+      />
       <div
         mix={css({
           display: 'flex',
@@ -137,25 +124,10 @@ function InstallBlock() {
       >
         <span>or</span>
       </div>
-      <code
-        mix={css({
-          display: 'block',
-          background: 'var(--surface-3)',
-          border: '1px solid var(--border)',
-          borderRadius: '12px',
-          padding: '16px 20px',
-          fontSize: '14px',
-          lineHeight: 1.5,
-          color: 'var(--text-primary)',
-          overflowX: 'auto',
-          whiteSpace: 'nowrap',
-          textAlign: 'left',
-        })}
-      >
-        <span mix={css({ color: 'var(--text-tertiary)' })}>$</span> brew tap nathanjmorton/zigc
-        {'\n'}
-        <span mix={css({ color: 'var(--text-tertiary)' })}>$</span> brew install zigc
-      </code>
+      <CopyBlock
+        command={"brew tap nathanjmorton/zigc && brew install zigc"}
+        display={"$ brew tap nathanjmorton/zigc\n$ brew install zigc"}
+      />
       <div
         mix={css({
           display: 'flex',
@@ -373,3 +345,67 @@ const linkStyles = {
   textUnderlineOffset: '2px',
   '&:hover': { color: 'var(--text-primary)' },
 } as const
+
+// ── Copy-to-clipboard ────────────────────────────────────────────────────────
+
+function CopyBlock() {
+  return ({ command, display }: { command: string; display: string }) => (
+    <pre
+      data-copy={command}
+      mix={css({
+        margin: 0,
+        background: 'var(--surface-3)',
+        border: '1px solid var(--border)',
+        borderRadius: '12px',
+        padding: '16px 20px',
+        fontSize: '14px',
+        lineHeight: 1.5,
+        color: 'var(--text-primary)',
+        overflowX: 'auto',
+        whiteSpace: 'pre',
+        textAlign: 'left',
+        cursor: 'pointer',
+        position: 'relative',
+        transition: 'border-color 150ms ease',
+        '&:hover': { borderColor: 'var(--accent)' },
+        '&::after': {
+          content: '"click to copy"',
+          position: 'absolute',
+          top: '8px',
+          right: '12px',
+          fontSize: '11px',
+          color: 'var(--text-tertiary)',
+          opacity: 0,
+          transition: 'opacity 150ms ease',
+        },
+        '&:hover::after': { opacity: 1 },
+      })}
+    >
+      {display}
+    </pre>
+  )
+}
+
+const COPY_SCRIPT = `
+document.addEventListener('click', function(e) {
+  var el = e.target.closest('[data-copy]');
+  if (!el) return;
+  var text = el.getAttribute('data-copy');
+  navigator.clipboard.writeText(text).then(function() {
+    var orig = el.getAttribute('data-orig-after');
+    if (!orig) el.setAttribute('data-orig-after', '');
+    el.style.setProperty('--copied', '1');
+    el.classList.add('copied');
+    var span = el.querySelector('.copy-feedback');
+    if (!span) {
+      span = document.createElement('span');
+      span.className = 'copy-feedback';
+      span.style.cssText = 'position:absolute;top:8px;right:12px;font-size:11px;color:var(--accent);';
+      span.textContent = 'Copied!';
+      el.appendChild(span);
+    }
+    span.style.opacity = '1';
+    setTimeout(function() { span.style.opacity = '0'; }, 1500);
+  });
+});
+`
