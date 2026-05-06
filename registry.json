@@ -208,5 +208,60 @@
     "url": "git+https://github.com/allyourcodebase/wlroots.git?ref=v0.20.0#fea057e464b44e1629b1d343e0d287d627059bbf",
     "hash": "wlroots-0.20.0-17hdY1yQAAAVCqRuvrig5yiqzsqRzmyJTq_a5aQvOu8A",
     "lib": "wlroots"
+  },
+  "murmur3": {
+    "url": "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/murmur3.tar.xz",
+    "hash": "murmur3-1.0.0-1HJ0YggtAAB83OzNhNwU_NHI-wLTB1_Svn6LsY0VR5s4",
+    "lib": "murmur3"
+  },
+  "linenoise": {
+    "url": "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/linenoise.tar.xz",
+    "hash": "linenoise-1.0.0-XaAGd7-rAAAVEP0R1OI7DSljTmySV3tKHV27WwC67D22",
+    "lib": "linenoise"
+  },
+  "libfort": {
+    "url": "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/libfort.tar.xz",
+    "hash": "libfort-0.5.0-wwdGNPmJBAD3Tb3pdphUCsbSqvInELDQpwrQWQnqpfzq",
+    "lib": "fort"
+  },
+  "utf8proc": {
+    "url": "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/utf8proc.tar.xz",
+    "hash": "utf8proc-2.7.0-Oyr2j_c7HgB9aWP5bht9VCxPvX2j1mTWMi0vyq7Y_U96",
+    "lib": "utf8proc"
+  },
+  "libpg_query": {
+    "url": "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/libpg_query.tar.xz",
+    "hash": "libpg_query-1.0.0-BRVHhbUhHADQ7nIHQk-OEbdVvkCTjLC5cw8tcKFIWYLx",
+    "lib": "duckdb_pg_query"
+  },
+  "fmt": {
+    "url": "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/fmt.tar.xz",
+    "hash": "fmt-10.1.0-CRkWTO30CADPsXSkv2Ozx7Ztni4RBqKXMQL7ja1MeFBV",
+    "lib": "fmt"
+  },
+  "googletest": {
+    "url": "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/googletest.tar.xz",
+    "hash": "googletest-1.14.0-qaocdy_0GABwHS2l9Yo6tMOVOKVpKyLhQyuGrqLqQrCv",
+    "lib": "googletest"
+  },
+  "argparse": {
+    "url": "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/argparse.tar.xz",
+    "hash": "argparse-2.9.0-K108bafPAAA5yyvdvlmovFG9ZA0sl4jzSmuGxJIj7msQ",
+    "lib": "argparse"
+  },
+  "backward_cpp": {
+    "url": "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/backward-cpp.tar.xz",
+    "hash": "backward_cpp-1.0.0-ttwlm7goAgBBTZ7iFnjn1OSWCr-qWXy5Q5vnReb3HUaA",
+    "lib": "backward_cpp"
+  },
+  "cpp_random_distributions": {
+    "url": "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/cpp_random_distributions.tar.xz",
+    "hash": "cpp_random_distributions-1.0.0-5dbfAtowAADbcgURQE5arjw4vOGx5QIJC39UXFNZ4ccl",
+    "lib": "cpp_random_distributions"
+  },
+  "readerwriterqueue": {
+    "url": "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/readerwriterqueue.tar.xz",
+    "hash": "readerwriterqueue-1.0.0-_yOjzdwHAQClCh_G3yK6coXCIYyKS8xKGYgdLFInapfX",
+    "lib": "readerwriterqueue"
   }
 }

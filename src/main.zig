@@ -248,7 +248,7 @@ pub fn parseBuildDeps(allocator: std.mem.Allocator, build_zig: []const u8) ![][]
 
 // ── Registry types + helpers ─────────────────────────────────────────────────
 
-const REGISTRY_URL = "https://raw.githubusercontent.com/nathanjmorton/zig-c/main/registry.json";
+const REGISTRY_URL = "https://raw.githubusercontent.com/nathanjmorton/zigc/main/registry.json";
 
 pub const RegistryEntry = struct {
     url: []const u8,
