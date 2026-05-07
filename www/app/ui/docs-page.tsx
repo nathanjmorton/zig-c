@@ -98,23 +98,22 @@ export function DocsPage() {
             </P>
 
             <H3>Create from TypeScript</H3>
-            <CodeBlock copy={"zigc init my-app --ts \x26\x26 cd my-app \x26\x26 zigtsc main.ts \x26\x26 zigc run"} lines={['zigc init my-app --ts', 'cd my-app', 'zigtsc main.ts          # generate C/C++ sources into src/', 'zigc run']} />
+            <CodeBlock copy={"zigc init demo --ts \x26\x26 cd demo \x26\x26 zigtsc ./src/main.ts \x26\x26 zigc run"} lines={['zigc init demo --ts', 'cd demo', 'zigtsc ./src/main.ts    # generate C/C++ sources in src/', 'zigc run']} />
             <P>
               Requires <A href="https://zigtsc.nathanjmorton.com">zigtsc</A>. <Code>zigc init --ts</Code>{' '}
-              scaffolds <Code>main.ts</Code> and the build infrastructure (<Code>build.zig</Code>,{' '}
-              <Code>build.zig.zon</Code>, <Code>src/</Code>). You then run <Code>zigtsc main.ts</Code>{' '}
-              to generate the C/C++ sources before building:
+              scaffolds <Code>src/main.ts</Code> and the build infrastructure (<Code>build.zig</Code>,{' '}
+              <Code>build.zig.zon</Code>). Running <Code>zigtsc ./src/main.ts</Code>{' '}
+              generates the C/C++ sources directly into <Code>src/</Code>:
             </P>
             <CodeBlock lines={[
-              'main.h      unified header (#ifdef __cplusplus guards)',
-              'main.c      C entrypoint — bridge calls, interface structs, main()',
-              'main.cpp    C++ class implementations + extern "C" bridge',
-              'main.js     JavaScript output',
+              'src/main.ts     TypeScript source',
+              'src/main.h      unified header (#ifdef __cplusplus guards)',
+              'src/main.c      C entrypoint — bridge calls, interface structs, main()',
+              'src/main.cpp    C++ class implementations + extern "C" bridge',
+              'src/main.js     JavaScript output',
             ]} />
             <P>
-              Move the generated <Code>.h</Code> / <Code>.c</Code> / <Code>.cpp</Code> files into{' '}
-              <Code>src/</Code>, then <Code>zigc build</Code> or <Code>zigc run</Code> compiles both{' '}
-              C and C++ sources and statically links them.
+              <Code>zigc run</Code> compiles the C and C++ sources in <Code>src/</Code> and statically links them.
             </P>
 
             <H3>Build and run</H3>

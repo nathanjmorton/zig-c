@@ -5,7 +5,7 @@ import { routes } from '../routes.ts'
 const FONT_STACK =
   "'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace"
 
-const VERSION = '0.1.0'
+const VERSION = '0.3.0'
 
 export function HomePage() {
   return () => (
