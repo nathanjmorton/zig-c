@@ -100,18 +100,19 @@ export function DocsPage() {
             <H3>Create from TypeScript</H3>
             <CodeBlock copy={"zigc init my-app --ts \x26\x26 cd my-app \x26\x26 zigc run"} lines={['zigc init my-app --ts', 'cd my-app', 'zigc run']} />
             <P>
-              Requires <A href="https://zigtsc.nathanjmorton.com">zigtsc</A>. Writes <Code>main.ts</Code>,
-              calls zigtsc to generate C++ class files, then creates a C entrypoint with{' '}
-              <Code>extern "C"</Code> bridge wrappers. The split is automatic:
+              Requires <A href="https://zigtsc.nathanjmorton.com">zigtsc</A>. Scaffolds <Code>main.ts</Code>,
+              runs <Code>zigtsc main.ts</Code> to generate all targets, then moves <Code>main.h</Code> /{' '}
+              <Code>main.c</Code> / <Code>main.cpp</Code> into <Code>src/</Code>. The split is automatic:
             </P>
             <CodeBlock lines={[
-              'Interfaces  → C struct in main.c',
-              'Classes     → C++ .h/.cpp with extern "C" bridge',
+              'Interfaces  → C struct in main.h + main.c',
+              'Classes     → C++ in main.h + main.cpp with extern "C" bridge',
               'Entrypoint  → C (main.c)',
             ]} />
             <P>
-              Output: <Code>src/main.c</Code> (Point struct + Counter bridge calls),{' '}
-              <Code>src/Counter.h</Code>, <Code>src/Counter.cpp</Code>.
+              Output: <Code>src/main.h</Code> (unified header),{' '}
+              <Code>src/main.c</Code> (C entrypoint with bridge calls),{' '}
+              <Code>src/main.cpp</Code> (C++ class impl + bridge).
               The build compiles both C and C++ sources and statically links them.
             </P>
 
