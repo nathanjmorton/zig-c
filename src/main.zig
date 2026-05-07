@@ -761,9 +761,9 @@ fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !
 
     if (ts) {
         // ── TypeScript project via zigtsc ──────────────────────────────
-        // Run zigtsc init to create main.ts; user runs zigtsc separately
-        // to generate the C/C++ sources before building.
-        const ts_init_path = try std.fmt.allocPrint(allocator, "{s}", .{name});
+        // Run zigtsc init to create main.ts in src/; user runs zigtsc
+        // separately to generate the C/C++ sources before building.
+        const ts_init_path = try std.fmt.allocPrint(allocator, "{s}/src", .{name});
         defer allocator.free(ts_init_path);
         exec(io, &.{ "zigtsc", "init", ts_init_path }) catch {
             std.debug.print("error: zigtsc failed — install: https://zigtsc.nathanjmorton.com\n", .{});
@@ -814,8 +814,8 @@ fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !
     if (ts) {
         std.debug.print("Created TypeScript project '{s}'\n", .{name});
         std.debug.print("  cd {s}\n", .{name});
-        std.debug.print("  zigtsc main.ts     # generate C/C++ sources\n", .{});
-        std.debug.print("  zigc run           # build and run\n", .{});
+        std.debug.print("  zigtsc ./src/main.ts   # generate C/C++ sources\n", .{});
+        std.debug.print("  zigc run               # build and run\n", .{});
     } else {
         const lang = if (cpp) "C++" else "C";
         std.debug.print("Created {s} project '{s}'\n", .{ lang, name });
