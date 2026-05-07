@@ -760,35 +760,15 @@ fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !
     try dir.createDir(io, "src", .default_dir);
 
     if (ts) {
-        // ── TypeScript → mixed C/C++ project via zigtsc ─────────────────
-        // Run zigtsc init inside the project dir to create main.ts,
-        // then zigtsc main.ts to generate main.h, main.c, main.cpp, main.js.
+        // ── TypeScript project via zigtsc ──────────────────────────────
+        // Run zigtsc init to create main.ts; user runs zigtsc separately
+        // to generate the C/C++ sources before building.
         const ts_init_path = try std.fmt.allocPrint(allocator, "{s}", .{name});
         defer allocator.free(ts_init_path);
         exec(io, &.{ "zigtsc", "init", ts_init_path }) catch {
             std.debug.print("error: zigtsc failed — install: https://zigtsc.nathanjmorton.com\n", .{});
             return error.CommandFailed;
         };
-        const ts_path = try std.fmt.allocPrint(allocator, "{s}/main.ts", .{name});
-        defer allocator.free(ts_path);
-        exec(io, &.{ "zigtsc", ts_path }) catch {
-            std.debug.print("error: zigtsc transpilation failed\n", .{});
-            return error.CommandFailed;
-        };
-
-        // Move generated .h/.c/.cpp from cwd into project src/
-        {
-            var src_dir = try dir.openDir(io, "src", .{});
-            defer src_dir.close(io);
-            for ([_][]const u8{ "main.h", "main.c", "main.cpp" }) |fname| {
-                const content = cwd.readFileAlloc(io, fname, allocator, .unlimited) catch continue;
-                defer allocator.free(content);
-                try src_dir.writeFile(io, .{ .sub_path = fname, .data = content });
-                cwd.deleteFile(io, fname) catch {};
-            }
-            // Clean up main.js from cwd (keep main.ts in project dir)
-            cwd.deleteFile(io, "main.js") catch {};
-        }
 
         // build.zig — mixed C + C++ compilation.
         {
@@ -828,9 +808,13 @@ fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !
     // .gitignore
     try dir.writeFile(io, .{ .sub_path = ".gitignore", .data = TMPL_GITIGNORE });
 
+    // Auto-insert fingerprint (Zig 0.16+ requires it).
+    autoFingerprint(io, allocator, dir, name);
+
     if (ts) {
-        std.debug.print("Created mixed C/C++ project '{s}' from TypeScript\n", .{name});
+        std.debug.print("Created TypeScript project '{s}'\n", .{name});
         std.debug.print("  cd {s}\n", .{name});
+        std.debug.print("  zigtsc main.ts     # generate C/C++ sources\n", .{});
         std.debug.print("  zigc run           # build and run\n", .{});
     } else {
         const lang = if (cpp) "C++" else "C";
@@ -842,10 +826,29 @@ fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !
     }
 }
 
+/// Run `zig build` against the new project to obtain the fingerprint Zig
+/// suggests, then splice it into build.zig.zon.  Best-effort — any failure
+/// is silently ignored so `zigc init` still succeeds.
+fn autoFingerprint(io: std.Io, allocator: std.mem.Allocator, dir: std.Io.Dir, name: []const u8) void {
+    const result = std.process.run(allocator, io, .{
+        .argv = &.{ "zig", "build" },
+        .cwd = .{ .path = name },
+    }) catch return;
+    defer allocator.free(result.stdout);
+    defer allocator.free(result.stderr);
+
+    const marker = "suggested value: ";
+    const pos = std.mem.indexOf(u8, result.stderr, marker) orelse return;
+    const start = pos + marker.len;
+    const len = std.mem.indexOfAny(u8, result.stderr[start..], "\n\r ") orelse result.stderr[start..].len;
+    const fp = result.stderr[start .. start + len];
+
+    insertFingerprintInDir(io, allocator, fp, dir) catch {};
+}
+
 /// Inserts a .fingerprint field into build.zig.zon before the closing brace.
-fn insertFingerprint(io: std.Io, allocator: std.mem.Allocator, fp_str: []const u8) !void {
-    const cwd = std.Io.Dir.cwd();
-    const content = try cwd.readFileAlloc(io, "build.zig.zon", allocator, .unlimited);
+fn insertFingerprintInDir(io: std.Io, allocator: std.mem.Allocator, fp_str: []const u8, dir: std.Io.Dir) !void {
+    const content = try dir.readFileAlloc(io, "build.zig.zon", allocator, .unlimited);
     defer allocator.free(content);
     const insert_pos = std.mem.lastIndexOf(u8, content, "}") orelse return error.InvalidManifest;
     const new_content = try std.mem.concat(allocator, u8, &.{
@@ -855,7 +858,12 @@ fn insertFingerprint(io: std.Io, allocator: std.mem.Allocator, fp_str: []const u
         ",\n}\n",
     });
     defer allocator.free(new_content);
-    try cwd.writeFile(io, .{ .sub_path = "build.zig.zon", .data = new_content });
+    try dir.writeFile(io, .{ .sub_path = "build.zig.zon", .data = new_content });
+}
+
+/// Inserts a .fingerprint field into build.zig.zon in the current directory.
+fn insertFingerprint(io: std.Io, allocator: std.mem.Allocator, fp_str: []const u8) !void {
+    return insertFingerprintInDir(io, allocator, fp_str, std.Io.Dir.cwd());
 }
 
 fn cmdAdd(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
