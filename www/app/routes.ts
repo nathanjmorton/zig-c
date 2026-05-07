@@ -4,6 +4,7 @@ export const routes = route({
   assets: get('/assets/*path'),
   home: '/',
   docs: '/docs',
+  maintainer: '/maintainer',
   install: get('/install.sh'),
   copyScript: get('/copy.js'),
 })

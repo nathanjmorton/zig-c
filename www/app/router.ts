@@ -2,6 +2,7 @@ import { createRouter } from 'remix/fetch-router'
 
 import { home } from './controllers/home.tsx'
 import { docs } from './controllers/docs.tsx'
+import { maintainer } from './controllers/maintainer.tsx'
 import { routes } from './routes.ts'
 
 const INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/nathanjmorton/zigc/main/install.sh'
@@ -37,6 +38,7 @@ router.get(routes.copyScript, () => {
 
 router.map(routes.home, home)
 router.map(routes.docs, docs)
+router.map(routes.maintainer, maintainer)
 
 const COPY_JS = `
 document.addEventListener('click', function(e) {

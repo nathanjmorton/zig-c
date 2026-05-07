@@ -185,9 +185,12 @@ export function DocsPage() {
           </Section>
 
 
-          <footer mix={css({ paddingTop: '24px', fontSize: '12px', color: 'var(--text-tertiary)', textAlign: 'center' })}>
+          <footer mix={css({ paddingTop: '24px', fontSize: '12px', color: 'var(--text-tertiary)', textAlign: 'center', display: 'flex', justifyContent: 'center', gap: '16px' })}>
             <a href={routes.home.href()} mix={css({ color: 'var(--accent)', textDecoration: 'underline', textUnderlineOffset: '2px' })}>
               ← Back to zigc
+            </a>
+            <a href={routes.maintainer.href()} mix={css({ color: 'var(--text-tertiary)', textDecoration: 'underline', textUnderlineOffset: '2px', '&:hover': { color: 'var(--text-secondary)' } })}>
+              Maintainer guide
             </a>
           </footer>
         </main>
