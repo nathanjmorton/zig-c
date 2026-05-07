@@ -3,8 +3,8 @@ const std = @import("std");
 // Path to the zigc binary, injected at build time via b.addOptions().
 const zig_c_path: []const u8 = @import("options").zig_c_path;
 
-// Import main.zig to unit-test its exported functions.
-const main = @import("main.zig");
+// Import lib.zig to unit-test its exported functions.
+const lib = @import("lib.zig");
 
 const io = std.testing.io;
 const gpa = std.testing.allocator;
@@ -83,49 +83,49 @@ fn stderrContains(result: std.process.RunResult, needle: []const u8) !void {
 // ── Unit tests: replaceAll ────────────────────────────────────────────────────
 
 test "replaceAll: no match returns identical content" {
-    const out = try main.replaceAll(gpa, "hello world", "XYZ", "abc");
+    const out = try lib.replaceAll(gpa, "hello world", "XYZ", "abc");
     defer gpa.free(out);
     try std.testing.expectEqualStrings("hello world", out);
 }
 
 test "replaceAll: same-length substitution" {
-    const out = try main.replaceAll(gpa, "hello NAME world", "NAME", "user");
+    const out = try lib.replaceAll(gpa, "hello NAME world", "NAME", "user");
     defer gpa.free(out);
     try std.testing.expectEqualStrings("hello user world", out);
 }
 
 test "replaceAll: replacement shorter than needle" {
-    const out = try main.replaceAll(gpa, "PROJ_NAME", "PROJ_NAME", "app");
+    const out = try lib.replaceAll(gpa, "PROJ_NAME", "PROJ_NAME", "app");
     defer gpa.free(out);
     try std.testing.expectEqualStrings("app", out);
 }
 
 test "replaceAll: replacement longer than needle" {
-    const out = try main.replaceAll(gpa, "X", "X", "my-project");
+    const out = try lib.replaceAll(gpa, "X", "X", "my-project");
     defer gpa.free(out);
     try std.testing.expectEqualStrings("my-project", out);
 }
 
 test "replaceAll: multiple occurrences" {
-    const out = try main.replaceAll(gpa, "a b a b a", "a", "XX");
+    const out = try lib.replaceAll(gpa, "a b a b a", "a", "XX");
     defer gpa.free(out);
     try std.testing.expectEqualStrings("XX b XX b XX", out);
 }
 
 test "replaceAll: empty replacement deletes needle" {
-    const out = try main.replaceAll(gpa, "helloworldhello", "hello", "");
+    const out = try lib.replaceAll(gpa, "helloworldhello", "hello", "");
     defer gpa.free(out);
     try std.testing.expectEqualStrings("world", out);
 }
 
 test "replaceAll: hyphen to underscore (identifier derivation)" {
-    const out = try main.replaceAll(gpa, "my-cool-lib", "-", "_");
+    const out = try lib.replaceAll(gpa, "my-cool-lib", "-", "_");
     defer gpa.free(out);
     try std.testing.expectEqualStrings("my_cool_lib", out);
 }
 
 test "replaceAll: entire string replaced" {
-    const out = try main.replaceAll(gpa, "abc", "abc", "xyz");
+    const out = try lib.replaceAll(gpa, "abc", "abc", "xyz");
     defer gpa.free(out);
     try std.testing.expectEqualStrings("xyz", out);
 }
@@ -146,7 +146,7 @@ const zon_with_paths =
 ;
 
 test "parseZonPaths: three entries" {
-    const paths = try main.parseZonPaths(gpa, zon_with_paths);
+    const paths = try lib.parseZonPaths(gpa, zon_with_paths);
     defer { for (paths) |p| gpa.free(p); gpa.free(paths); }
     try std.testing.expectEqual(@as(usize, 3), paths.len);
     try std.testing.expectEqualStrings("build.zig", paths[0]);
@@ -156,21 +156,21 @@ test "parseZonPaths: three entries" {
 
 test "parseZonPaths: empty .paths block" {
     const zon = ".{ .paths = .{} }";
-    const paths = try main.parseZonPaths(gpa, zon);
+    const paths = try lib.parseZonPaths(gpa, zon);
     defer { for (paths) |p| gpa.free(p); gpa.free(paths); }
     try std.testing.expectEqual(@as(usize, 0), paths.len);
 }
 
 test "parseZonPaths: no .paths field" {
     const zon = ".{ .name = .foo }";
-    const paths = try main.parseZonPaths(gpa, zon);
+    const paths = try lib.parseZonPaths(gpa, zon);
     defer { for (paths) |p| gpa.free(p); gpa.free(paths); }
     try std.testing.expectEqual(@as(usize, 0), paths.len);
 }
 
 test "parseBuildDeps: single dependency" {
     const src = "const x = b.dependency(\"lz4\", .{ .target = target });";
-    const keys = try main.parseBuildDeps(gpa, src);
+    const keys = try lib.parseBuildDeps(gpa, src);
     defer { for (keys) |k| gpa.free(k); gpa.free(keys); }
     try std.testing.expectEqual(@as(usize, 1), keys.len);
     try std.testing.expectEqualStrings("lz4", keys[0]);
@@ -181,7 +181,7 @@ test "parseBuildDeps: multiple distinct deps" {
         \\const a = b.dependency("lz4", .{});
         \\const b_ = b.dependency("zstd", .{});
     ;
-    const keys = try main.parseBuildDeps(gpa, src);
+    const keys = try lib.parseBuildDeps(gpa, src);
     defer { for (keys) |k| gpa.free(k); gpa.free(keys); }
     try std.testing.expectEqual(@as(usize, 2), keys.len);
     try std.testing.expectEqualStrings("lz4", keys[0]);
@@ -193,13 +193,13 @@ test "parseBuildDeps: deduplicates repeated dep" {
         \\const a = b.dependency("lz4", .{});
         \\const b_ = b.dependency("lz4", .{});
     ;
-    const keys = try main.parseBuildDeps(gpa, src);
+    const keys = try lib.parseBuildDeps(gpa, src);
     defer { for (keys) |k| gpa.free(k); gpa.free(keys); }
     try std.testing.expectEqual(@as(usize, 1), keys.len);
 }
 
 test "parseBuildDeps: no dependency calls" {
-    const keys = try main.parseBuildDeps(gpa, "const x = 1;\n");
+    const keys = try lib.parseBuildDeps(gpa, "const x = 1;\n");
     defer { for (keys) |k| gpa.free(k); gpa.free(keys); }
     try std.testing.expectEqual(@as(usize, 0), keys.len);
 }
@@ -209,22 +209,22 @@ test "parseBuildDeps: no dependency calls" {
 // Helper: call buildArgv with an arena and return just the final argument slice.
 // The arena is the allocator so strings stay valid for the duration of the test.
 fn argvFor(ar: std.mem.Allocator, base: []const []const u8, extra: []const []const u8) ![]const []const u8 {
-    return main.buildArgv(ar, base, extra);
+    return lib.buildArgv(ar, base, extra);
 }
 
 test "isBuildOption: Zig options start with lowercase" {
-    try std.testing.expect(main.isBuildOption("optimize=ReleaseFast"));
-    try std.testing.expect(main.isBuildOption("cflags=-Wall"));
-    try std.testing.expect(main.isBuildOption("target=x86_64-linux"));
-    try std.testing.expect(main.isBuildOption("verbose"));
+    try std.testing.expect(lib.isBuildOption("optimize=ReleaseFast"));
+    try std.testing.expect(lib.isBuildOption("cflags=-Wall"));
+    try std.testing.expect(lib.isBuildOption("target=x86_64-linux"));
+    try std.testing.expect(lib.isBuildOption("verbose"));
 }
 
 test "isBuildOption: C macros start with uppercase or non-alpha" {
-    try std.testing.expect(!main.isBuildOption("NDEBUG"));
-    try std.testing.expect(!main.isBuildOption("DEBUG=1"));
-    try std.testing.expect(!main.isBuildOption("FOO=bar"));
-    try std.testing.expect(!main.isBuildOption("_POSIX_SOURCE"));
-    try std.testing.expect(!main.isBuildOption(""));
+    try std.testing.expect(!lib.isBuildOption("NDEBUG"));
+    try std.testing.expect(!lib.isBuildOption("DEBUG=1"));
+    try std.testing.expect(!lib.isBuildOption("FOO=bar"));
+    try std.testing.expect(!lib.isBuildOption("_POSIX_SOURCE"));
+    try std.testing.expect(!lib.isBuildOption(""));
 }
 
 test "buildArgv: -O3 maps to -Doptimize=ReleaseFast" {
@@ -346,7 +346,7 @@ const registry_json =
 ;
 
 test "registryLookupFromJson: finds existing entry" {
-    const entry = main.registryLookupFromJson(registry_json, "lz4") orelse
+    const entry = lib.registryLookupFromJson(registry_json, "lz4") orelse
         return error.ExpectedEntry;
     try std.testing.expectEqualStrings("git+https://github.com/allyourcodebase/lz4.git?ref=1.10.0-6#abc123", entry.url);
     try std.testing.expectEqualStrings("lz4-1.10.0-6-ewyzw-fakehash", entry.hash);
@@ -354,14 +354,14 @@ test "registryLookupFromJson: finds existing entry" {
 }
 
 test "registryLookupFromJson: finds second entry" {
-    const entry = main.registryLookupFromJson(registry_json, "sqlite") orelse
+    const entry = lib.registryLookupFromJson(registry_json, "sqlite") orelse
         return error.ExpectedEntry;
     try std.testing.expectEqualStrings("sqlite", entry.lib);
     try std.testing.expectEqualStrings("sqlite-3.49.1-fakehash", entry.hash);
 }
 
 test "registryLookupFromJson: returns null for missing key" {
-    const entry = main.registryLookupFromJson(registry_json, "nonexistent");
+    const entry = lib.registryLookupFromJson(registry_json, "nonexistent");
     try std.testing.expect(entry == null);
 }
 
@@ -369,7 +369,7 @@ test "registryLookupFromJson: returns null for missing key" {
 
 test "extractJsonArrayField: extracts names from array of objects" {
     const json = "[{\"name\":\"lz4\",\"id\":1},{\"name\":\"zlib\",\"id\":2}]";
-    const names = try main.extractJsonArrayField(gpa, json, "name");
+    const names = try lib.extractJsonArrayField(gpa, json, "name");
     defer { for (names) |n| gpa.free(n); gpa.free(names); }
     try std.testing.expectEqual(@as(usize, 2), names.len);
     try std.testing.expectEqualStrings("lz4", names[0]);
@@ -377,21 +377,21 @@ test "extractJsonArrayField: extracts names from array of objects" {
 }
 
 test "extractJsonArrayField: empty array returns empty" {
-    const names = try main.extractJsonArrayField(gpa, "[]", "name");
+    const names = try lib.extractJsonArrayField(gpa, "[]", "name");
     defer gpa.free(names);
     try std.testing.expectEqual(@as(usize, 0), names.len);
 }
 
 test "extractJsonNestedField: extracts nested sha" {
     const json = "[{\"name\":\"v1.0\",\"commit\":{\"sha\":\"abc123\"}}]";
-    const sha = main.extractJsonNestedField(json, "commit", "sha") orelse
+    const sha = lib.extractJsonNestedField(json, "commit", "sha") orelse
         return error.ExpectedField;
     try std.testing.expectEqualStrings("abc123", sha);
 }
 
 test "extractJsonNestedField: returns null when outer key missing" {
     const json = "[{\"name\":\"v1.0\"}]";
-    const sha = main.extractJsonNestedField(json, "commit", "sha");
+    const sha = lib.extractJsonNestedField(json, "commit", "sha");
     try std.testing.expect(sha == null);
 }
 
@@ -399,12 +399,12 @@ test "extractJsonNestedField: returns null when outer key missing" {
 
 test "registry lookup + inject: friendly name resolves and produces valid zon + build.zig" {
     // 1. Look up "sqlite" in the test registry JSON.
-    const entry = main.registryLookupFromJson(registry_json, "sqlite") orelse
+    const entry = lib.registryLookupFromJson(registry_json, "sqlite") orelse
         return error.ExpectedEntry;
 
     // 2. Insert into build.zig.zon.
     const zon = ".{ .name = .demo, .dependencies = .{} }";
-    const new_zon = try main.insertZonDep(gpa, zon, "sqlite", entry.url, entry.hash);
+    const new_zon = try lib.insertZonDep(gpa, zon, "sqlite", entry.url, entry.hash);
     defer gpa.free(new_zon);
 
     // Verify the zon contains the dep with correct url and hash.
@@ -413,7 +413,7 @@ test "registry lookup + inject: friendly name resolves and produces valid zon + 
     try std.testing.expect(std.mem.indexOf(u8, new_zon, entry.hash) != null);
 
     // 3. Insert into build.zig.
-    const updated_build = try main.insertBuildLink(gpa, build_zig_fixture, "sqlite", entry.lib);
+    const updated_build = try lib.insertBuildLink(gpa, build_zig_fixture, "sqlite", entry.lib);
     defer gpa.free(updated_build);
 
     // Verify build.zig has the dependency and linkLibrary calls.
@@ -431,7 +431,7 @@ test "registry lookup + inject: friendly name resolves and produces valid zon + 
 
 test "insertZonDep: inserts new dep into empty dependencies" {
     const zon = ".{ .name = .foo, .dependencies = .{} }";
-    const result = try main.insertZonDep(gpa, zon, "lz4", "git+https://example.com/lz4.git#abc", "lz4-hash");
+    const result = try lib.insertZonDep(gpa, zon, "lz4", "git+https://example.com/lz4.git#abc", "lz4-hash");
     defer gpa.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, ".lz4 = .{") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, ".url = \"git+https://example.com/lz4.git#abc\"") != null);
@@ -440,9 +440,9 @@ test "insertZonDep: inserts new dep into empty dependencies" {
 
 test "insertZonDep: idempotent (no double-insert)" {
     const zon = ".{ .name = .foo, .dependencies = .{} }";
-    const once = try main.insertZonDep(gpa, zon, "lz4", "url", "hash");
+    const once = try lib.insertZonDep(gpa, zon, "lz4", "url", "hash");
     defer gpa.free(once);
-    const twice = try main.insertZonDep(gpa, once, "lz4", "url", "hash");
+    const twice = try lib.insertZonDep(gpa, once, "lz4", "url", "hash");
     defer gpa.free(twice);
     try std.testing.expectEqualStrings(once, twice);
 }
@@ -473,13 +473,13 @@ test "parseZonDeps: empty dependencies" {
     const zon =
         \\.{ .name = .foo, .dependencies = .{} }
     ;
-    const deps = try main.parseZonDeps(gpa, zon);
+    const deps = try lib.parseZonDeps(gpa, zon);
     defer { for (deps) |d| { gpa.free(d.key); gpa.free(d.url); } gpa.free(deps); }
     try std.testing.expectEqual(@as(usize, 0), deps.len);
 }
 
 test "parseZonDeps: two entries" {
-    const deps = try main.parseZonDeps(gpa, zon_fixture);
+    const deps = try lib.parseZonDeps(gpa, zon_fixture);
     defer { for (deps) |d| { gpa.free(d.key); gpa.free(d.url); } gpa.free(deps); }
     try std.testing.expectEqual(@as(usize, 2), deps.len);
     try std.testing.expectEqualStrings("lz4", deps[0].key);
@@ -489,7 +489,7 @@ test "parseZonDeps: two entries" {
 
 test "parseZonDeps: no .dependencies block" {
     const zon = ".{ .name = .foo }";
-    const deps = try main.parseZonDeps(gpa, zon);
+    const deps = try lib.parseZonDeps(gpa, zon);
     defer { for (deps) |d| { gpa.free(d.key); gpa.free(d.url); } gpa.free(deps); }
     try std.testing.expectEqual(@as(usize, 0), deps.len);
 }
@@ -507,7 +507,7 @@ const build_zig_fixture =
 ;
 
 test "insertBuildLink: injects dependency before exe" {
-    const updated = try main.insertBuildLink(gpa, build_zig_fixture, "lz4", "lz4");
+    const updated = try lib.insertBuildLink(gpa, build_zig_fixture, "lz4", "lz4");
     defer gpa.free(updated);
     try std.testing.expect(std.mem.indexOf(u8, updated, "lz4_dep") != null);
     try std.testing.expect(std.mem.indexOf(u8, updated, "b.dependency(\"lz4\"") != null);
@@ -519,9 +519,9 @@ test "insertBuildLink: injects dependency before exe" {
 }
 
 test "insertBuildLink: idempotent (no double-insert)" {
-    const once = try main.insertBuildLink(gpa, build_zig_fixture, "lz4", "lz4");
+    const once = try lib.insertBuildLink(gpa, build_zig_fixture, "lz4", "lz4");
     defer gpa.free(once);
-    const twice = try main.insertBuildLink(gpa, once, "lz4", "lz4");
+    const twice = try lib.insertBuildLink(gpa, once, "lz4", "lz4");
     defer gpa.free(twice);
     const count1 = std.mem.count(u8, once, "lz4_dep");
     const count2 = std.mem.count(u8, twice, "lz4_dep");
@@ -529,15 +529,15 @@ test "insertBuildLink: idempotent (no double-insert)" {
 }
 
 test "insertBuildLink: custom lib name" {
-    const updated = try main.insertBuildLink(gpa, build_zig_fixture, "mypkg", "mylib");
+    const updated = try lib.insertBuildLink(gpa, build_zig_fixture, "mypkg", "mylib");
     defer gpa.free(updated);
     try std.testing.expect(std.mem.indexOf(u8, updated, "mypkg_dep.artifact(\"mylib\")") != null);
 }
 
 test "removeBuildLink: removes dep lines" {
-    const with_link = try main.insertBuildLink(gpa, build_zig_fixture, "lz4", "lz4");
+    const with_link = try lib.insertBuildLink(gpa, build_zig_fixture, "lz4", "lz4");
     defer gpa.free(with_link);
-    const removed = try main.removeBuildLink(gpa, with_link, "lz4");
+    const removed = try lib.removeBuildLink(gpa, with_link, "lz4");
     defer gpa.free(removed);
     try std.testing.expect(std.mem.indexOf(u8, removed, "lz4_dep") == null);
     // Everything else should still be present.

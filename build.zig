@@ -4,6 +4,15 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // ── zigc library module (for downstream consumers like zigtsc) ────────
+    const lib_mod = b.createModule(.{
+        .root_source_file = b.path("src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    _ = b.addModule("zigc", .{ .root_source_file = b.path("src/lib.zig") });
+
     // ── zigc CLI ──────────────────────────────────────────────────────────────
     const cli_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -11,6 +20,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
+    _ = lib_mod; // CLI imports lib.zig directly via @import
     const cli = b.addExecutable(.{
         .name = "zigc",
         .root_module = cli_mod,
