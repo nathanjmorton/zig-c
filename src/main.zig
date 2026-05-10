@@ -7,22 +7,27 @@ const usage =
     \\zigc — C/C++ project build tool powered by the Zig build system
     \\
     \\Usage:
-    \\  zigc init   <name> [--cpp] [--ts]  Create a new project in ./<name>/
-    \\  zigc add    <name|url> [--lib n] [--header-only]  Add a dependency
-    \\  zigc remove <name>          Remove a dependency
-    \\  zigc list                   List installed dependencies
-    \\  zigc registry update        Fetch the latest package registry
-    \\  zigc registry generate [--limit N]  Scrape allyourcodebase → registry.json
-    \\  zigc safe   [files...]       Run memory-safety analysis on C/C++ sources
-    \\  zigc check  [--build]       Verify project integrity
-    \\  zigc verify [--symbols]     Inspect object files and symbols
-    \\  zigc build  [flags]         Build the current project  (zig build)
-    \\  zigc build  --wasm          Build targeting wasm32-freestanding
-    \\  zigc build  --wasi          Build targeting wasm32-wasi
-    \\  zigc run    [flags]         Build all targets and run  (out/bin + out/wasm)
-    \\  zigc clean                  Remove .zig-cache/, zig-out/, and out/
-    \\  zigc upgrade                Upgrade zigc to the latest release
-    \\  zigc help                   Show this help
+    \\  zigc init   <path> [--cpp] [--ts]  Create a new project
+    \\  zigc build  [path] [flags]         Build the project  (zig build)
+    \\  zigc run    [path] [flags]         Build and run
+    \\  zigc safe   [path]                 Run memory-safety analysis
+    \\  zigc fix    [path]                 Auto-fix safety demo bugs
+    \\  zigc check  [--build]              Verify project integrity
+    \\  zigc verify [--symbols]            Inspect object files and symbols
+    \\  zigc add    <name|url> [--lib n]   Add a dependency
+    \\  zigc remove <name>                 Remove a dependency
+    \\  zigc list                          List installed dependencies
+    \\  zigc clean                         Remove .zig-cache/, zig-out/, and out/
+    \\  zigc upgrade                       Upgrade zigc to the latest release
+    \\  zigc help                          Show this help
+    \\
+    \\Quick start:
+    \\  zigc init /tmp/demo      Create a project with safety demo
+    \\  zigc safe /tmp/demo      Find memory-safety bugs
+    \\  zigc fix  /tmp/demo      Auto-fix all bugs
+    \\  zigc safe /tmp/demo      Verify: 0 errors
+    \\  zigc build /tmp/demo     Compile
+    \\  zigc run   /tmp/demo     Run
     \\
 ;
 
@@ -74,6 +79,8 @@ pub fn main(init: std.process.Init) !void {
         }
     } else if (std.mem.eql(u8, cmd, "safe")) {
         try lib.cmdSafe(io, allocator, rest);
+    } else if (std.mem.eql(u8, cmd, "fix")) {
+        try lib.cmdFix(io, allocator, rest);
     } else if (std.mem.eql(u8, cmd, "clean")) {
         try lib.cmdClean(io);
     } else if (std.mem.eql(u8, cmd, "upgrade")) {

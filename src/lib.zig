@@ -115,46 +115,41 @@ pub const TMPL_SAFETY_BUGS_C =
     \\#include "safety_bugs.h"
     \\
     \\// ── Bug 1: Use After Free ──────────────────────────────────────────────
-    \\//
-    \\// FIX: Move the printf() call BEFORE free(buf).
-    \\//
+    \\// FIX: Comment the two BUG lines, uncomment the two FIX lines.
     \\void demo_use_after_free(void) {
     \\    char *buf = malloc(64);
     \\    strcpy(buf, "hello, safety!");
-    \\    free(buf);
-    \\    printf("use_after_free: %s\n", buf);  // BUG: buf already freed
+    \\    free(buf);                             // BUG
+    \\    printf("use_after_free: %s\n", buf);   // BUG
+    \\    // printf("use_after_free: %s\n", buf); // FIX
+    \\    // free(buf);                           // FIX
     \\}
     \\
     \\// ── Bug 2: Double Free ────────────────────────────────────────────────
-    \\//
-    \\// FIX: Remove the second free(data).
-    \\//
+    \\// FIX: Comment the BUG line.
     \\void demo_double_free(void) {
     \\    int *data = malloc(10 * sizeof(int));
     \\    data[0] = 42;
     \\    free(data);
-    \\    free(data);  // BUG: data already freed
+    \\    free(data);  // BUG
     \\}
     \\
     \\// ── Bug 3: Memory Leak ──────────────────────────────────────────────
-    \\//
-    \\// FIX: Add free(leaked) before the function returns.
-    \\//
+    \\// FIX: Uncomment the FIX line.
     \\void demo_memory_leak(void) {
     \\    char *leaked = malloc(256);
     \\    strcpy(leaked, "this memory is never freed");
     \\    printf("leak: %s\n", leaked);
-    \\    // BUG: missing free(leaked)
+    \\    // free(leaked);  // FIX
     \\}
     \\
     \\// ── Bug 4: Leak on Reassignment ──────────────────────────────────────
-    \\//
-    \\// FIX: Call free(p) before the second malloc.
-    \\//
+    \\// FIX: Uncomment the FIX line.
     \\void demo_leak_on_reassign(void) {
     \\    int *p = malloc(sizeof(int));
     \\    *p = 1;
-    \\    p = malloc(sizeof(int));  // BUG: first allocation leaked
+    \\    // free(p);  // FIX
+    \\    p = malloc(sizeof(int));
     \\    *p = 2;
     \\    free(p);
     \\}
@@ -805,7 +800,7 @@ pub fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
         return error.MissingArgument;
     }
 
-    var name: []const u8 = undefined;
+    var path: []const u8 = undefined;
     var cpp = false;
     var ts = false;
     var got_name = false;
@@ -815,7 +810,7 @@ pub fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
         } else if (std.mem.eql(u8, arg, "--ts")) {
             ts = true;
         } else if (!got_name) {
-            name = arg;
+            path = arg;
             got_name = true;
         }
     }
@@ -824,6 +819,9 @@ pub fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
         return error.MissingArgument;
     }
 
+    // Extract the basename for naming (e.g. "/tmp/myapp" → "myapp")
+    const name = if (std.mem.lastIndexOfScalar(u8, path, '/')) |sep| path[sep + 1 ..] else path;
+
     const ident = try allocator.dupe(u8, name);
     defer allocator.free(ident);
     for (ident) |*ch| {
@@ -831,14 +829,14 @@ pub fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
     }
 
     const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, name, .default_dir) catch |err| {
+    cwd.createDir(io, path, .default_dir) catch |err| {
         if (err == error.PathAlreadyExists) {
-            std.debug.print("error: directory '{s}' already exists\n", .{name});
+            std.debug.print("error: directory '{s}' already exists\n", .{path});
             return error.DirectoryExists;
         }
         return err;
     };
-    var dir = try cwd.openDir(io, name, .{});
+    var dir = try cwd.openDir(io, path, .{});
     defer dir.close(io);
     try dir.createDir(io, "src", .default_dir);
 
@@ -892,21 +890,21 @@ pub fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
     try dir.writeFile(io, .{ .sub_path = ".gitignore", .data = TMPL_GITIGNORE });
 
     // Auto-insert fingerprint (Zig 0.16+ requires it).
-    autoFingerprint(io, allocator, dir, name);
+    autoFingerprint(io, allocator, dir, path);
 
     if (ts) {
-        std.debug.print("Created TypeScript project '{s}'\n", .{name});
-        std.debug.print("  cd {s}\n", .{name});
+        std.debug.print("Created TypeScript project '{s}'\n", .{path});
+        std.debug.print("  cd {s}\n", .{path});
         std.debug.print("  zigtsc ./src/main.ts   # generate C/C++ sources\n", .{});
         std.debug.print("  zigc run               # build and run\n", .{});
     } else if (cpp) {
-        std.debug.print("Created C++ project '{s}'\n", .{name});
-        std.debug.print("  cd {s}\n", .{name});
+        std.debug.print("Created C++ project '{s}'\n", .{path});
+        std.debug.print("  cd {s}\n", .{path});
         std.debug.print("  zigc build         # compile\n", .{});
         std.debug.print("  zigc run           # compile and run\n", .{});
     } else {
-        std.debug.print("Created C project '{s}' with safety demo\n", .{name});
-        std.debug.print("  cd {s}\n", .{name});
+        std.debug.print("Created C project '{s}' with safety demo\n", .{path});
+        std.debug.print("  cd {s}\n", .{path});
         std.debug.print("  zigc safe          # find memory-safety bugs\n", .{});
         std.debug.print("  zigc build         # compile\n", .{});
         std.debug.print("  zigc run           # compile and run\n", .{});
@@ -1519,10 +1517,30 @@ pub fn buildArgv(
     return argv.toOwnedSlice(ar);
 }
 
+/// If the first non-flag argument looks like a directory path (contains '/' or
+/// is '.'), extract it and return the remaining args.  The caller passes the
+/// directory to zig via --build-file <dir>/build.zig.
+fn extractDirArg(allocator: std.mem.Allocator, args: []const []const u8) !struct { dir: ?[]const u8, rest: []const []const u8 } {
+    if (args.len > 0 and !std.mem.startsWith(u8, args[0], "-") and
+        (std.mem.indexOfScalar(u8, args[0], '/') != null or std.mem.eql(u8, args[0], ".")))
+    {
+        return .{ .dir = args[0], .rest = args[1..] };
+    }
+    _ = allocator;
+    return .{ .dir = null, .rest = args };
+}
+
 pub fn cmdBuild(io: std.Io, allocator: std.mem.Allocator, extra: []const []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
-    const argv = try buildArgv(arena.allocator(), &.{ "zig", "build" }, extra);
+    const ar = arena.allocator();
+    const parsed = try extractDirArg(ar, extra);
+    var base: std.ArrayList([]const u8) = .empty;
+    try base.appendSlice(ar, &.{ "zig", "build" });
+    if (parsed.dir) |dir| {
+        try base.appendSlice(ar, &.{ "--build-file", try std.fmt.allocPrint(ar, "{s}/build.zig", .{dir}) });
+    }
+    const argv = try buildArgv(ar, base.items, parsed.rest);
     try execZig(io, allocator, argv);
 }
 
@@ -1530,7 +1548,13 @@ pub fn cmdRun(io: std.Io, allocator: std.mem.Allocator, extra: []const []const u
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const ar = arena.allocator();
-    const argv = try buildArgv(ar, &.{ "zig", "build", "run" }, extra);
+    const parsed = try extractDirArg(ar, extra);
+    var base: std.ArrayList([]const u8) = .empty;
+    try base.appendSlice(ar, &.{ "zig", "build", "run" });
+    if (parsed.dir) |dir| {
+        try base.appendSlice(ar, &.{ "--build-file", try std.fmt.allocPrint(ar, "{s}/build.zig", .{dir}) });
+    }
+    const argv = try buildArgv(ar, base.items, parsed.rest);
     try execZig(io, allocator, argv);
 }
 
@@ -1775,20 +1799,26 @@ pub fn cmdSafe(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
     defer arena.deinit();
     const ar = arena.allocator();
 
+    // Check if the first arg is a directory path.
+    const parsed = try extractDirArg(ar, args);
+    const base_dir: []const u8 = parsed.dir orelse ".";
+    const remaining_args = parsed.rest;
+
     // Collect source files to analyse.
     var files: std.ArrayList([]const u8) = .empty;
 
-    if (args.len > 0) {
+    if (remaining_args.len > 0) {
         // Explicit files passed on the command line.
-        for (args) |arg| {
+        for (remaining_args) |arg| {
             if (!std.mem.startsWith(u8, arg, "--"))
                 try files.append(ar, arg);
         }
     } else {
-        // Default: scan src/ for .c and .cpp files.
+        // Default: scan <dir>/src/ for .c and .cpp files.
+        const src_path = try std.fmt.allocPrint(ar, "{s}/src", .{base_dir});
         const cwd = std.Io.Dir.cwd();
-        var src_dir = cwd.openDir(io, "src", .{ .iterate = true }) catch {
-            std.debug.print("error: could not open src/ directory\n", .{});
+        var src_dir = cwd.openDir(io, src_path, .{ .iterate = true }) catch {
+            std.debug.print("error: could not open {s}/ directory\n", .{src_path});
             return error.NoSrcDir;
         };
         defer src_dir.close(io);
@@ -1800,7 +1830,7 @@ pub fn cmdSafe(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
                 std.mem.endsWith(u8, name, ".cc") or std.mem.endsWith(u8, name, ".h") or
                 std.mem.endsWith(u8, name, ".hpp"))
             {
-                try files.append(ar, try std.fmt.allocPrint(ar, "src/{s}", .{name}));
+                try files.append(ar, try std.fmt.allocPrint(ar, "{s}/src/{s}", .{ base_dir, name }));
             }
         }
     }
@@ -1871,9 +1901,65 @@ pub fn cmdSafe(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
         c.n_ok, c.n_warn, ws, c.n_fail, es,
     });
     if (c.n_fail > 0) {
-        std.debug.print("\nSee src/README.md for fix instructions.\n", .{});
+        std.debug.print("\nRun 'zigc fix' to auto-fix, or see src/README.md for manual instructions.\n", .{});
         return error.SafetyErrors;
     }
+}
+
+/// Auto-fix safety demo: comment lines ending with "// BUG", uncomment lines ending with "// FIX".
+pub fn cmdFix(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const ar = arena.allocator();
+
+    const parsed = try extractDirArg(ar, args);
+    const base_dir: []const u8 = parsed.dir orelse ".";
+    const file_path = try std.fmt.allocPrint(ar, "{s}/src/safety_bugs.c", .{base_dir});
+
+    const cwd = std.Io.Dir.cwd();
+    const source = cwd.readFileAlloc(io, file_path, ar, .unlimited) catch {
+        std.debug.print("error: could not read {s}\n", .{file_path});
+        return error.FileNotFound;
+    };
+
+    var out: std.ArrayList(u8) = .empty;
+    var lines_iter = std.mem.splitScalar(u8, source, '\n');
+    var n_fixed: usize = 0;
+    while (lines_iter.next()) |line| {
+        const trimmed = std.mem.trimEnd(u8, line, " \t");
+        if (std.mem.endsWith(u8, trimmed, "// BUG")) {
+            // Comment out the buggy line
+            try out.appendSlice(ar, "    // ");
+            try out.appendSlice(ar, std.mem.trimStart(u8, line, " \t"));
+            try out.append(ar, '\n');
+            n_fixed += 1;
+        } else if (std.mem.endsWith(u8, trimmed, "// FIX")) {
+            // Uncomment the fix line
+            const content = std.mem.trimStart(u8, line, " \t");
+            if (std.mem.startsWith(u8, content, "// ")) {
+                try out.appendSlice(ar, "    ");
+                try out.appendSlice(ar, content[3..]);
+                try out.append(ar, '\n');
+                n_fixed += 1;
+            } else {
+                try out.appendSlice(ar, line);
+                try out.append(ar, '\n');
+            }
+        } else {
+            try out.appendSlice(ar, line);
+            try out.append(ar, '\n');
+        }
+    }
+    // Remove trailing extra newline if source didn't end with one
+    if (out.items.len > 0 and out.items[out.items.len - 1] == '\n' and
+        source.len > 0 and source[source.len - 1] != '\n')
+    {
+        out.items.len -= 1;
+    }
+
+    try cwd.writeFile(io, .{ .sub_path = file_path, .data = out.items });
+    std.debug.print("Fixed {d} lines in {s}\n", .{ n_fixed, file_path });
+    std.debug.print("Run 'zigc safe' to verify all issues are resolved.\n", .{});
 }
 
 // ── Generalized upgrade

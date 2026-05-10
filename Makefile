@@ -1,6 +1,6 @@
 # Makefile for zigc project
 
-ZIGC         := ./zig-out/bin/zigc
+ZIGC         := $(CURDIR)/zig-out/bin/zigc
 ZIGC_RELEASED := $(shell which zigc 2>/dev/null || echo $(HOME)/.zigc/bin/zigc)
 
 # Default target
@@ -26,21 +26,25 @@ release: clean build test
 
 # ── demo ──────────────────────────────────────────────────────────────────────
 
-# Run all demo tasks in order (builds first)
-demo: build demo-init demo-build demo-safe
+# Run the full quick-start workflow (init → safe → fix → safe → build → run)
+demo: build demo-init demo-safe demo-fix demo-build demo-run
 
 demo-init:
 	rm -rf /tmp/zigc-demo && \
-	cd /tmp && $(CURDIR)/$(ZIGC) init zigc-demo
+	$(ZIGC) init /tmp/zigc-demo
 
 demo-build:
-	cd /tmp/zigc-demo && $(CURDIR)/$(ZIGC) build
+	$(ZIGC) build /tmp/zigc-demo
 
 demo-safe:
-	cd /tmp/zigc-demo && $(CURDIR)/$(ZIGC) safe || true
+	$(ZIGC) safe /tmp/zigc-demo || true
+
+demo-fix:
+	$(ZIGC) fix /tmp/zigc-demo
+	$(ZIGC) safe /tmp/zigc-demo
 
 demo-run:
-	cd /tmp/zigc-demo && $(CURDIR)/$(ZIGC) run
+	$(ZIGC) run /tmp/zigc-demo
 
 # ── demo-released ─────────────────────────────────────────────────────────────
 
@@ -54,16 +58,16 @@ demo-released-check:
 
 demo-released-init:
 	rm -rf /tmp/zigc-demo-released && \
-	cd /tmp && $(ZIGC_RELEASED) init zigc-demo-released
+	$(ZIGC_RELEASED) init /tmp/zigc-demo-released
 
 demo-released-build:
-	cd /tmp/zigc-demo-released && $(ZIGC_RELEASED) build
+	$(ZIGC_RELEASED) build /tmp/zigc-demo-released
 
 demo-released-safe:
-	cd /tmp/zigc-demo-released && $(ZIGC_RELEASED) safe || true
+	$(ZIGC_RELEASED) safe /tmp/zigc-demo-released || true
 
 demo-released-run:
-	cd /tmp/zigc-demo-released && $(ZIGC_RELEASED) run
+	$(ZIGC_RELEASED) run /tmp/zigc-demo-released
 
 # ── test-all ───────────────────────────────────────────────────────────────────
 
