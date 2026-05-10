@@ -13,6 +13,7 @@ const usage =
     \\  zigc list                   List installed dependencies
     \\  zigc registry update        Fetch the latest package registry
     \\  zigc registry generate [--limit N]  Scrape allyourcodebase → registry.json
+    \\  zigc safe   [files...]       Run memory-safety analysis on C/C++ sources
     \\  zigc check  [--build]       Verify project integrity
     \\  zigc verify [--symbols]     Inspect object files and symbols
     \\  zigc build  [flags]         Build the current project  (zig build)
@@ -71,6 +72,8 @@ pub fn main(init: std.process.Init) !void {
             std.debug.print("Usage: zigc registry <update|generate>\n", .{});
             return error.MissingArgument;
         }
+    } else if (std.mem.eql(u8, cmd, "safe")) {
+        try lib.cmdSafe(io, allocator, rest);
     } else if (std.mem.eql(u8, cmd, "clean")) {
         try lib.cmdClean(io);
     } else if (std.mem.eql(u8, cmd, "upgrade")) {

@@ -1642,6 +1642,115 @@ pub fn cmdClean(io: std.Io) !void {
     }
 }
 
+// ── Safety analysis ──────────────────────────────────────────────────────────
+
+const safety = @import("safety.zig");
+const c_ast = @import("c_ast.zig");
+const CParser = @import("c_parser.zig").Parser;
+
+pub fn cmdSafe(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const ar = arena.allocator();
+
+    // Collect source files to analyse.
+    var files: std.ArrayList([]const u8) = .empty;
+
+    if (args.len > 0) {
+        // Explicit files passed on the command line.
+        for (args) |arg| {
+            if (!std.mem.startsWith(u8, arg, "--"))
+                try files.append(ar, arg);
+        }
+    } else {
+        // Default: scan src/ for .c and .cpp files.
+        const cwd = std.Io.Dir.cwd();
+        var src_dir = cwd.openDir(io, "src", .{ .iterate = true }) catch {
+            std.debug.print("error: could not open src/ directory\n", .{});
+            return error.NoSrcDir;
+        };
+        defer src_dir.close(io);
+        var iter = src_dir.iterate();
+        while (try iter.next(io)) |entry| {
+            if (entry.kind == .directory) continue;
+            const name = entry.name;
+            if (std.mem.endsWith(u8, name, ".c") or std.mem.endsWith(u8, name, ".cpp") or
+                std.mem.endsWith(u8, name, ".cc") or std.mem.endsWith(u8, name, ".h") or
+                std.mem.endsWith(u8, name, ".hpp"))
+            {
+                try files.append(ar, try std.fmt.allocPrint(ar, "src/{s}", .{name}));
+            }
+        }
+    }
+
+    if (files.items.len == 0) {
+        std.debug.print("zigc safe: no C/C++ source files found\n", .{});
+        return;
+    }
+
+    var c: Check = .{};
+    const cwd = std.Io.Dir.cwd();
+
+    std.debug.print("zigc safe\n", .{});
+
+    for (files.items) |path| {
+        const source = cwd.readFileAlloc(io, path, ar, .unlimited) catch {
+            std.debug.print("  warning: could not read {s}\n", .{path});
+            c.n_warn += 1;
+            continue;
+        };
+
+        var parser = CParser.init(source, ar);
+        defer parser.deinit();
+        const root = parser.parse() catch {
+            std.debug.print("  warning: parse error in {s}\n", .{path});
+            c.n_warn += 1;
+            continue;
+        };
+
+        var checker = safety.SafetyChecker.init(&parser.tree, ar);
+        checker.check(root) catch {
+            std.debug.print("  warning: analysis error in {s}\n", .{path});
+            c.n_warn += 1;
+            continue;
+        };
+
+        if (checker.diagnostics.items.len == 0) {
+            c.ok(try std.fmt.allocPrint(ar, "{s} — no issues", .{path}));
+            continue;
+        }
+
+        for (checker.diagnostics.items) |d| {
+            const line = parser.tree.lineNumber(d.loc);
+            const sev_str: []const u8 = switch (d.severity) {
+                .@"error" => "error",
+                .warning => "warning",
+            };
+            if (d.note_msg.len > 0) {
+                const note_line = parser.tree.lineNumber(d.note_loc);
+                std.debug.print("  {s}:{d}: {s}: {s} (line {d}: {s})\n", .{
+                    path, line, sev_str, d.msg, note_line, d.note_msg,
+                });
+            } else {
+                std.debug.print("  {s}:{d}: {s}: {s}\n", .{
+                    path, line, sev_str, d.msg,
+                });
+            }
+            switch (d.severity) {
+                .@"error" => c.n_fail += 1,
+                .warning => c.n_warn += 1,
+            }
+        }
+    }
+
+    const ws: []const u8 = if (c.n_warn == 1) "" else "s";
+    const es: []const u8 = if (c.n_fail == 1) "" else "s";
+    std.debug.print("\n{d} ok, {d} warning{s}, {d} error{s}\n", .{
+        c.n_ok, c.n_warn, ws, c.n_fail, es,
+    });
+    if (c.n_fail > 0) return error.SafetyErrors;
+}
+
 // ── Generalized upgrade ──────────────────────────────────────────────────────
 
 /// Detect the Zig target triple for the current platform at comptime.

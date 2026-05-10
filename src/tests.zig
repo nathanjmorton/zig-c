@@ -1192,6 +1192,122 @@ test "init → build --wasi: produces .wasm binary" {
     _ = try proj.statFile(io, "zig-out/bin/wasmtest.wasm", .{});
 }
 
+// ── Unit tests: safety checker ────────────────────────────────────────────────
+
+const safety = @import("safety.zig");
+const CParser = @import("c_parser.zig").Parser;
+
+/// Helper: parse + check a C source string, return the checker.
+fn checkSafety(source: []const u8) !struct { n_err: usize, n_warn: usize } {
+    var parser = CParser.init(source, gpa);
+    defer parser.deinit();
+    defer parser.tree.deinit();
+    const root = try parser.parse();
+    var checker = safety.SafetyChecker.init(&parser.tree, gpa);
+    defer checker.deinit();
+    try checker.check(root);
+    return .{ .n_err = checker.errorCount(), .n_warn = checker.warningCount() };
+}
+
+test "safety: clean code passes with no diagnostics" {
+    const src =
+        \\#include <stdlib.h>
+        \\void foo(void) {
+        \\    int *p = malloc(sizeof(int));
+        \\    *p = 42;
+        \\    free(p);
+        \\}
+    ;
+    const result = try checkSafety(src);
+    try std.testing.expectEqual(@as(usize, 0), result.n_err);
+    try std.testing.expectEqual(@as(usize, 0), result.n_warn);
+}
+
+test "safety: use after free detected" {
+    const src =
+        \\void foo(void) {
+        \\    int *p = malloc(sizeof(int));
+        \\    free(p);
+        \\    *p = 10;
+        \\}
+    ;
+    const result = try checkSafety(src);
+    try std.testing.expect(result.n_err >= 1);
+}
+
+test "safety: double free detected" {
+    const src =
+        \\void foo(void) {
+        \\    int *p = malloc(sizeof(int));
+        \\    free(p);
+        \\    free(p);
+        \\}
+    ;
+    const result = try checkSafety(src);
+    try std.testing.expect(result.n_err >= 1);
+}
+
+test "safety: memory leak detected" {
+    const src =
+        \\void foo(void) {
+        \\    int *p = malloc(sizeof(int));
+        \\}
+    ;
+    const result = try checkSafety(src);
+    try std.testing.expect(result.n_warn >= 1);
+}
+
+test "safety: returned pointer is not a leak" {
+    const src =
+        \\int *make(void) {
+        \\    int *p = malloc(sizeof(int));
+        \\    return p;
+        \\}
+    ;
+    const result = try checkSafety(src);
+    try std.testing.expectEqual(@as(usize, 0), result.n_err);
+    try std.testing.expectEqual(@as(usize, 0), result.n_warn);
+}
+
+test "safety: free then use in same function" {
+    const src =
+        \\#include <stdlib.h>
+        \\#include <stdio.h>
+        \\void process(void) {
+        \\    char *buf = malloc(100);
+        \\    free(buf);
+        \\    printf("%s", buf);
+        \\}
+    ;
+    const result = try checkSafety(src);
+    try std.testing.expect(result.n_err >= 1);
+}
+
+test "safety: reassign owned pointer without free is a leak" {
+    const src =
+        \\void foo(void) {
+        \\    int *p = malloc(sizeof(int));
+        \\    p = malloc(sizeof(int));
+        \\    free(p);
+        \\}
+    ;
+    const result = try checkSafety(src);
+    try std.testing.expect(result.n_warn >= 1);
+}
+
+test "safety: free(NULL) is not an error" {
+    const src =
+        \\void foo(void) {
+        \\    int *p = NULL;
+        \\    free(p);
+        \\}
+    ;
+    const result = try checkSafety(src);
+    try std.testing.expectEqual(@as(usize, 0), result.n_err);
+}
+
+// ── Integration: zigc init --cpp → run ───────────────────────────────────────
+
 test "init --cpp → run: binary prints expected greeting" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
