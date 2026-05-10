@@ -490,8 +490,16 @@ pub const Parser = struct {
                 // Function call
                 node = try self.parseCallArgs(node);
             } else if (self.current.tag == .lbracket) {
-                // Array indexing — treat as a use of the pointer
+                // Array indexing: arr[i] is semantically *(arr + i), a dereference.
+                // Wrap in deref_expr so the safety checker knows this is a use,
+                // not a pointer reassignment (e.g. data[0] = 42).
+                const idx_loc: u32 = @intCast(self.current.loc.start);
                 self.skipBrackets();
+                node = try self.tree.addNode(.{
+                    .tag = .deref_expr,
+                    .data = .{ .lhs = node },
+                    .loc = idx_loc,
+                });
             } else if (self.current.tag == .plus_plus or self.current.tag == .minus_minus) {
                 self.bump(); // postfix ++ / --
             } else break;
