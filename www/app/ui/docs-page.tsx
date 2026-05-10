@@ -188,6 +188,9 @@ export function DocsPage() {
             <a href={routes.home.href()} mix={css({ color: 'var(--accent)', textDecoration: 'underline', textUnderlineOffset: '2px' })}>
               ← Back to zigc
             </a>
+            <a href={routes.bustub.href()} mix={css({ color: 'var(--text-tertiary)', textDecoration: 'underline', textUnderlineOffset: '2px', '&:hover': { color: 'var(--text-secondary)' } })}>
+              BusTub case study
+            </a>
             <a href={routes.maintainer.href()} mix={css({ color: 'var(--text-tertiary)', textDecoration: 'underline', textUnderlineOffset: '2px', '&:hover': { color: 'var(--text-secondary)' } })}>
               Maintainer guide
             </a>

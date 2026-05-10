@@ -253,6 +253,7 @@ function Footer() {
       <div mix={css({ display: 'flex', gap: '16px' })}>
         <a href="https://github.com/nathanjmorton/zigc">GitHub</a>
         <a href={routes.docs.href()}>Docs</a>
+        <a href={routes.bustub.href()}>BusTub Case Study</a>
       </div>
       <p mix={css({ margin: 0 })}>MIT License</p>
     </footer>

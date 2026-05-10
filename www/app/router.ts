@@ -2,6 +2,7 @@ import { createRouter } from 'remix/fetch-router'
 
 import { home } from './controllers/home.tsx'
 import { docs } from './controllers/docs.tsx'
+import { bustub } from './controllers/bustub.tsx'
 import { maintainer } from './controllers/maintainer.tsx'
 import { routes } from './routes.ts'
 
@@ -38,6 +39,7 @@ router.get(routes.copyScript, () => {
 
 router.map(routes.home, home)
 router.map(routes.docs, docs)
+router.map(routes.bustub, bustub)
 router.map(routes.maintainer, maintainer)
 
 const COPY_JS = `

@@ -5,6 +5,7 @@ export const routes = route({
   home: '/',
   docs: '/docs',
   maintainer: '/maintainer',
+  bustub: '/bustub',
   install: get('/install.sh'),
   copyScript: get('/copy.js'),
 })

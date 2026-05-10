@@ -1,0 +1,56 @@
+.{
+    .name = .bustub,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+    .dependencies = .{
+        .readerwriterqueue = .{
+            .url = "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/readerwriterqueue.tar.xz",
+            .hash = "readerwriterqueue-1.0.0-_yOjzR4IAQCSYax1XQSGKyzPMVKYElf54Xd-a-ExXjsY",
+        },
+        .cpp_random_distributions = .{
+            .url = "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/cpp_random_distributions.tar.xz",
+            .hash = "cpp_random_distributions-1.0.0-5dbfAhwxAAARcB8f2E53F0U0wG_uSFfxETUU2IDjoA9h",
+        },
+        .backward_cpp = .{
+            .url = "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/backward-cpp.tar.xz",
+            .hash = "backward_cpp-1.0.0-ttwlm_ooAgCLi73XLDNyMs_2KUTPGhLw1Z42PGaflQw-",
+        },
+        .argparse = .{
+            .url = "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/argparse.tar.xz",
+            .hash = "argparse-2.9.0-K108benPAABAmzBrC06vkXYzL-YU0mtfVC44EYMfe_jp",
+        },
+        .googletest = .{
+            .url = "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/googletest.tar.xz",
+            .hash = "googletest-1.14.0-qaocdy_0GABwHS2l9Yo6tMOVOKVpKyLhQyuGrqLqQrCv",
+        },
+        .fmt = .{
+            .url = "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/fmt.tar.xz",
+            .hash = "fmt-10.1.0-CRkWTO30CADPsXSkv2Ozx7Ztni4RBqKXMQL7ja1MeFBV",
+        },
+        .libpg_query = .{
+            .url = "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/libpg_query.tar.xz",
+            .hash = "libpg_query-1.0.0-BRVHhbUhHADQ7nIHQk-OEbdVvkCTjLC5cw8tcKFIWYLx",
+        },
+        .utf8proc = .{
+            .url = "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/utf8proc.tar.xz",
+            .hash = "utf8proc-2.7.0-Oyr2j_87HgCAVjF9X7CY5W28t3zLzgCRo448d2D3-COq",
+        },
+        .libfort = .{
+            .url = "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/libfort.tar.xz",
+            .hash = "libfort-0.5.0-wwdGNASKBADBw9FRR-ZRgqTRYsKliIGvw7VShfV1_Bk0",
+        },
+        .linenoise = .{
+            .url = "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/linenoise.tar.xz",
+            .hash = "linenoise-1.0.0-XaAGd8irAABmWYEt-e0xGQbeyGuNTWMnW9BiASn-TR6G",
+        },
+        .murmur3 = .{
+            .url = "https://nathanjmorton-zigc-packages.s3.amazonaws.com/bustub-deps/murmur3.tar.xz",
+            .hash = "murmur3-1.0.0-1HJ0Yg8tAAAiNCN_w9Lw7FZKfmJNVp_5bPNMMMUORQDG",
+        },},
+    .fingerprint = 0x1e4a227445e4fb9f,
+}
