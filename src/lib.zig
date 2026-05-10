@@ -2,7 +2,7 @@ const std = @import("std");
 
 // ── Version ───────────────────────────────────────────────────────────────────
 
-pub const VERSION = "0.8.0";
+pub const VERSION = "0.9.0";
 
 // ── Templates ────────────────────────────────────────────────────────────────
 // Placeholders replaced at runtime (not fmt strings — safe to contain { }):
