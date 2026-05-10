@@ -27,7 +27,7 @@ release: clean build test
 # ── demo ──────────────────────────────────────────────────────────────────────
 
 # Run all demo tasks in order (builds first)
-demo: build demo-init demo-build demo-safe demo-run
+demo: build demo-init demo-build demo-safe
 
 demo-init:
 	rm -rf /tmp/zigc-demo && \
@@ -37,7 +37,7 @@ demo-build:
 	cd /tmp/zigc-demo && $(CURDIR)/$(ZIGC) build
 
 demo-safe:
-	cd /tmp/zigc-demo && $(CURDIR)/$(ZIGC) safe
+	cd /tmp/zigc-demo && $(CURDIR)/$(ZIGC) safe || true
 
 demo-run:
 	cd /tmp/zigc-demo && $(CURDIR)/$(ZIGC) run
@@ -45,7 +45,7 @@ demo-run:
 # ── demo-released ─────────────────────────────────────────────────────────────
 
 # Run all demo tasks against the installed (released) binary
-demo-released: demo-released-check demo-released-init demo-released-build demo-released-safe demo-released-run
+demo-released: demo-released-check demo-released-init demo-released-build demo-released-safe
 
 demo-released-check:
 	@test -x "$(ZIGC_RELEASED)" || \
@@ -60,7 +60,7 @@ demo-released-build:
 	cd /tmp/zigc-demo-released && $(ZIGC_RELEASED) build
 
 demo-released-safe:
-	cd /tmp/zigc-demo-released && $(ZIGC_RELEASED) safe
+	cd /tmp/zigc-demo-released && $(ZIGC_RELEASED) safe || true
 
 demo-released-run:
 	cd /tmp/zigc-demo-released && $(ZIGC_RELEASED) run

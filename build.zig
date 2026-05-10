@@ -33,26 +33,6 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run zigc");
     run_step.dependOn(&cli_run.step);
 
-    // ── hello.c lz4 demo ──────────────────────────────────────────────────────
-    const lz4 = b.dependency("lz4", .{ .target = target, .optimize = optimize });
-    const hello_mod = b.createModule(.{
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-    });
-    hello_mod.addCSourceFile(.{ .file = b.path("hello.c"), .flags = &.{} });
-    hello_mod.linkLibrary(lz4.artifact("lz4"));
-    const hello = b.addExecutable(.{
-        .name = "hello",
-        .root_module = hello_mod,
-    });
-    b.installArtifact(hello);
-
-    const hello_run = b.addRunArtifact(hello);
-    hello_run.step.dependOn(b.getInstallStep());
-    const hello_step = b.step("hello", "Build and run the lz4 demo");
-    hello_step.dependOn(&hello_run.step);
-
     // ── test suite ───────────────────────────────────────────────────────
     const test_opts = b.addOptions();
     test_opts.addOption([]const u8, "zig_c_path", b.getInstallPath(.bin, "zigc"));

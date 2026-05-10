@@ -16,14 +16,13 @@ pub const TMPL_BUILD_ZIG =
     \\    const target = b.standardTargetOptions(.{});
     \\    const optimize = b.standardOptimizeOption(.{});
     \\
-    \\    const is_wasm = target.result.cpu.arch == .wasm32 or target.result.cpu.arch == .wasm64;
-    \\    const is_freestanding = target.result.os.tag == .freestanding;
-    \\
     \\    const mod = b.createModule(.{
     \\        .target = target,
     \\        .optimize = optimize,
-    \\        .link_libc = !is_freestanding,
+    \\        .link_libc = true,
     \\    });
+    \\
+    \\    mod.addIncludePath(b.path("src"));
     \\
     \\    // Base C flags.  Pass extra ones with -Dcflags=-DFOO,-Werror
     \\    var cflags: std.ArrayList([]const u8) = .empty;
@@ -34,7 +33,7 @@ pub const TMPL_BUILD_ZIG =
     \\    }
     \\    mod.addCSourceFiles(.{
     \\        .root = b.path("src"),
-    \\        .files = &.{"main.c"},
+    \\        .files = &.{ "main.c", "safety_bugs.c" },
     \\        .flags = cflags.items,
     \\    });
     \\
@@ -44,13 +43,11 @@ pub const TMPL_BUILD_ZIG =
     \\    });
     \\    b.installArtifact(exe);
     \\
-    \\    if (!is_wasm) {
-    \\        const run_cmd = b.addRunArtifact(exe);
-    \\        run_cmd.step.dependOn(b.getInstallStep());
-    \\        if (b.args) |args| run_cmd.addArgs(args);
-    \\        const run_step = b.step("run", "Build and run");
-    \\        run_step.dependOn(&run_cmd.step);
-    \\    }
+    \\    const run_cmd = b.addRunArtifact(exe);
+    \\    run_cmd.step.dependOn(b.getInstallStep());
+    \\    if (b.args) |args| run_cmd.addArgs(args);
+    \\    const run_step = b.step("run", "Build and run");
+    \\    run_step.dependOn(&run_cmd.step);
     \\}
     \\
 ;
@@ -72,12 +69,133 @@ pub const TMPL_BUILD_ZIG_ZON =
 
 pub const TMPL_MAIN_C =
     \\#include <stdio.h>
+    \\#include "safety_bugs.h"
     \\
-    \\int main(int argc, char *argv[]) {
-    \\    const char *name = (argc > 1) ? argv[1] : "PROJ_NAME";
-    \\    printf("Hello from %s!\n", name);
+    \\int main(void) {
+    \\    printf("=== PROJ_NAME — zigc safety demo ===\n\n");
+    \\
+    \\    printf("1. Use after free\n");
+    \\    demo_use_after_free();
+    \\
+    \\    printf("\n2. Double free\n");
+    \\    demo_double_free();
+    \\
+    \\    printf("\n3. Memory leak\n");
+    \\    demo_memory_leak();
+    \\
+    \\    printf("\n4. Leak on reassignment\n");
+    \\    demo_leak_on_reassign();
+    \\
+    \\    printf("\n=== done ===\n");
     \\    return 0;
     \\}
+    \\
+;
+
+pub const TMPL_SAFETY_BUGS_H =
+    \\#ifndef SAFETY_BUGS_H
+    \\#define SAFETY_BUGS_H
+    \\
+    \\// Each function demonstrates a memory-safety bug that `zigc safe` detects.
+    \\// See safety_bugs.c for annotated implementations with fix instructions.
+    \\
+    \\void demo_use_after_free(void);
+    \\void demo_double_free(void);
+    \\void demo_memory_leak(void);
+    \\void demo_leak_on_reassign(void);
+    \\
+    \\#endif
+    \\
+;
+
+pub const TMPL_SAFETY_BUGS_C =
+    \\#include <stdlib.h>
+    \\#include <stdio.h>
+    \\#include <string.h>
+    \\#include "safety_bugs.h"
+    \\
+    \\// ── Bug 1: Use After Free ──────────────────────────────────────────────
+    \\//
+    \\// FIX: Move the printf() call BEFORE free(buf).
+    \\//
+    \\void demo_use_after_free(void) {
+    \\    char *buf = malloc(64);
+    \\    strcpy(buf, "hello, safety!");
+    \\    free(buf);
+    \\    printf("use_after_free: %s\n", buf);  // BUG: buf already freed
+    \\}
+    \\
+    \\// ── Bug 2: Double Free ────────────────────────────────────────────────
+    \\//
+    \\// FIX: Remove the second free(data).
+    \\//
+    \\void demo_double_free(void) {
+    \\    int *data = malloc(10 * sizeof(int));
+    \\    data[0] = 42;
+    \\    free(data);
+    \\    free(data);  // BUG: data already freed
+    \\}
+    \\
+    \\// ── Bug 3: Memory Leak ──────────────────────────────────────────────
+    \\//
+    \\// FIX: Add free(leaked) before the function returns.
+    \\//
+    \\void demo_memory_leak(void) {
+    \\    char *leaked = malloc(256);
+    \\    strcpy(leaked, "this memory is never freed");
+    \\    printf("leak: %s\n", leaked);
+    \\    // BUG: missing free(leaked)
+    \\}
+    \\
+    \\// ── Bug 4: Leak on Reassignment ──────────────────────────────────────
+    \\//
+    \\// FIX: Call free(p) before the second malloc.
+    \\//
+    \\void demo_leak_on_reassign(void) {
+    \\    int *p = malloc(sizeof(int));
+    \\    *p = 1;
+    \\    p = malloc(sizeof(int));  // BUG: first allocation leaked
+    \\    *p = 2;
+    \\    free(p);
+    \\}
+    \\
+;
+
+pub const TMPL_SAFETY_README =
+    \\# zigc safe — Memory Safety Demo
+    \\
+    \\This project demonstrates `zigc safe`, which detects memory-safety bugs
+    \\in your C/C++ code before compilation.
+    \\
+    \\## Step 1: Run the safety checker
+    \\
+    \\    zigc safe
+    \\
+    \\You will see errors for use-after-free, double-free, and memory leaks
+    \\in `src/safety_bugs.c`.
+    \\
+    \\## Step 2: Read the fix instructions
+    \\
+    \\Each bug in `src/safety_bugs.c` has a FIX comment explaining how to
+    \\resolve it.  Open the file, apply the fixes, then re-run:
+    \\
+    \\    zigc safe
+    \\
+    \\Once all issues are resolved you will see:
+    \\
+    \\    3 ok, 0 warnings, 0 errors
+    \\
+    \\## Step 3: Build and run
+    \\
+    \\    zigc build
+    \\    zigc run
+    \\
+    \\## What zigc safe detects
+    \\
+    \\  - Use after free — accessing a pointer after free()
+    \\  - Double free    — calling free() on an already-freed pointer
+    \\  - Memory leak    — allocated memory never freed before scope exit
+    \\  - Leak on reassign — overwriting an owned pointer without freeing
     \\
 ;
 
@@ -745,13 +863,21 @@ pub fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
             try dir.writeFile(io, .{ .sub_path = "build.zig", .data = content });
         }
         {
-            const tmpl = if (cpp) TMPL_MAIN_CPP else TMPL_MAIN_C;
-            const src_file = if (cpp) "main.cpp" else "main.c";
-            const content = try replaceAll(allocator, tmpl, "PROJ_NAME", name);
-            defer allocator.free(content);
             var src_dir = try dir.openDir(io, "src", .{});
             defer src_dir.close(io);
-            try src_dir.writeFile(io, .{ .sub_path = src_file, .data = content });
+            if (cpp) {
+                const content = try replaceAll(allocator, TMPL_MAIN_CPP, "PROJ_NAME", name);
+                defer allocator.free(content);
+                try src_dir.writeFile(io, .{ .sub_path = "main.cpp", .data = content });
+            } else {
+                // Default: safety demo project
+                const main_content = try replaceAll(allocator, TMPL_MAIN_C, "PROJ_NAME", name);
+                defer allocator.free(main_content);
+                try src_dir.writeFile(io, .{ .sub_path = "main.c", .data = main_content });
+                try src_dir.writeFile(io, .{ .sub_path = "safety_bugs.h", .data = TMPL_SAFETY_BUGS_H });
+                try src_dir.writeFile(io, .{ .sub_path = "safety_bugs.c", .data = TMPL_SAFETY_BUGS_C });
+                try src_dir.writeFile(io, .{ .sub_path = "README.md", .data = TMPL_SAFETY_README });
+            }
         }
     }
 
@@ -773,13 +899,18 @@ pub fn cmdInit(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
         std.debug.print("  cd {s}\n", .{name});
         std.debug.print("  zigtsc ./src/main.ts   # generate C/C++ sources\n", .{});
         std.debug.print("  zigc run               # build and run\n", .{});
-    } else {
-        const lang = if (cpp) "C++" else "C";
-        std.debug.print("Created {s} project '{s}'\n", .{ lang, name });
+    } else if (cpp) {
+        std.debug.print("Created C++ project '{s}'\n", .{name});
         std.debug.print("  cd {s}\n", .{name});
         std.debug.print("  zigc build         # compile\n", .{});
         std.debug.print("  zigc run           # compile and run\n", .{});
-        std.debug.print("  zigc add <url>     # add a library dependency\n", .{});
+    } else {
+        std.debug.print("Created C project '{s}' with safety demo\n", .{name});
+        std.debug.print("  cd {s}\n", .{name});
+        std.debug.print("  zigc safe          # find memory-safety bugs\n", .{});
+        std.debug.print("  zigc build         # compile\n", .{});
+        std.debug.print("  zigc run           # compile and run\n", .{});
+        std.debug.print("  See src/README.md for fix instructions\n", .{});
     }
 }
 
@@ -1399,17 +1530,8 @@ pub fn cmdRun(io: std.Io, allocator: std.mem.Allocator, extra: []const []const u
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const ar = arena.allocator();
-
-    // 1. Build native to out/bin via --prefix out
-    const native_argv = try buildArgv(ar, &.{ "zig", "build", "--prefix", "out" }, extra);
-    try execZig(io, allocator, native_argv);
-
-    // 2. Build wasm to temporary prefix, then move to out/wasm (best-effort)
-    buildWasm(io, allocator, ar, extra);
-
-    // 3. Run the native binary via zig build run (uses cached build)
-    const run_argv = try buildArgv(ar, &.{ "zig", "build", "run" }, extra);
-    try execZig(io, allocator, run_argv);
+    const argv = try buildArgv(ar, &.{ "zig", "build", "run" }, extra);
+    try execZig(io, allocator, argv);
 }
 
 /// Best-effort wasm build: build to a temp prefix, then copy artifacts to out/wasm/.
@@ -1748,10 +1870,13 @@ pub fn cmdSafe(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
     std.debug.print("\n{d} ok, {d} warning{s}, {d} error{s}\n", .{
         c.n_ok, c.n_warn, ws, c.n_fail, es,
     });
-    if (c.n_fail > 0) return error.SafetyErrors;
+    if (c.n_fail > 0) {
+        std.debug.print("\nSee src/README.md for fix instructions.\n", .{});
+        return error.SafetyErrors;
+    }
 }
 
-// ── Generalized upgrade ──────────────────────────────────────────────────────
+// ── Generalized upgrade
 
 /// Detect the Zig target triple for the current platform at comptime.
 pub fn detectTarget() []const u8 {

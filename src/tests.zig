@@ -572,9 +572,14 @@ test "init: creates all expected files with correct content" {
     try hasContent(proj, "build.zig.zon", ".minimum_zig_version = \"0.16.0\"");
     try hasContent(proj, "build.zig.zon", ".dependencies = .{}");
 
-    // src/main.c
+    // src/main.c — safety demo
     try hasContent(src, "main.c", "#include <stdio.h>");
-    try hasContent(src, "main.c", "\"my-project\"");
+    try hasContent(src, "main.c", "safety_bugs.h");
+
+    // src/safety_bugs.c and .h must exist
+    _ = try src.statFile(io, "safety_bugs.c", .{});
+    _ = try src.statFile(io, "safety_bugs.h", .{});
+    _ = try src.statFile(io, "README.md", .{});
 
     // .gitignore
     try hasContent(proj, ".gitignore", ".zig-cache/");
@@ -694,35 +699,27 @@ test "init → build (idempotent): second build is a no-op and still succeeds" {
 
 // ── Integration: run workflow ─────────────────────────────────────────────────
 
-test "init → run: binary executes and prints expected greeting" {
+test "init → safe: default project has safety bugs" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
     {
-        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "greeter" });
+        const r = try runIn(tmp.dir, &.{ zig_c_path, "init", "safetest" });
         defer gpa.free(r.stdout);
         defer gpa.free(r.stderr);
         try ok(r);
     }
 
-    var proj = try tmp.dir.openDir(io, "greeter", .{});
+    var proj = try tmp.dir.openDir(io, "safetest", .{});
     defer proj.close(io);
 
-    const r = try runIn(proj, &.{ zig_c_path, "run" });
+    // zigc safe should fail (exit non-zero) because the demo has intentional bugs.
+    const r = try runIn(proj, &.{ zig_c_path, "safe" });
     defer gpa.free(r.stdout);
     defer gpa.free(r.stderr);
-    try ok(r);
-
-    // "Hello from greeter!" may appear in stdout or stderr depending on whether
-    // execZig's first-try path or the fingerprint-retry path was taken.
-    const combined = try std.mem.concat(gpa, u8, &.{ r.stdout, r.stderr });
-    defer gpa.free(combined);
-    if (std.mem.indexOf(u8, combined, "Hello from greeter!") == null) {
-        std.debug.print("\nExpected 'Hello from greeter!' in output.\nstdout:\n{s}\nstderr:\n{s}\n", .{
-            r.stdout, r.stderr,
-        });
-        return error.MissingGreeting;
-    }
+    try fail(r);
+    try stderrContains(r, "error");
+    try stderrContains(r, "README.md");
 }
 
 // ── Integration: clean ────────────────────────────────────────────────────────
@@ -1138,7 +1135,7 @@ test "init --cpp: C project (no flag) is unchanged" {
     defer src.close(io);
 
     try hasContent(src, "main.c", "#include <stdio.h>");
-    try hasContent(proj, "build.zig", ".link_libc = !is_freestanding");
+    try hasContent(proj, "build.zig", ".link_libc = true");
     try hasContent(proj, "build.zig", "-std=c11");
     try lacksContent(proj, "build.zig", "link_libcpp");
 }
