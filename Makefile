@@ -73,6 +73,9 @@ test-all: all demo-released
 upgrade:
 	brew update && brew upgrade zigc
 
+website:
+	npm --prefix www run dev
+
 # Ship: release, wait for CI to finish, then upgrade the local install.
 # Usage: make ship          (auto-bumps minor)
 #        make ship V=1.0.0  (explicit version)
