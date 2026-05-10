@@ -49,7 +49,7 @@ demo-run:
 # ── demo-released ─────────────────────────────────────────────────────────────
 
 # Run all demo tasks against the installed (released) binary
-demo-released: demo-released-check demo-released-init demo-released-build demo-released-safe
+demo-released: demo-released-check demo-released-init demo-released-safe demo-released-fix demo-released-build demo-released-run
 
 demo-released-check:
 	@test -x "$(ZIGC_RELEASED)" || \
@@ -60,11 +60,15 @@ demo-released-init:
 	rm -rf /tmp/zigc-demo-released && \
 	$(ZIGC_RELEASED) init /tmp/zigc-demo-released
 
-demo-released-build:
-	$(ZIGC_RELEASED) build /tmp/zigc-demo-released
-
 demo-released-safe:
 	$(ZIGC_RELEASED) safe /tmp/zigc-demo-released || true
+
+demo-released-fix:
+	$(ZIGC_RELEASED) fix /tmp/zigc-demo-released
+	$(ZIGC_RELEASED) safe /tmp/zigc-demo-released
+
+demo-released-build:
+	$(ZIGC_RELEASED) build /tmp/zigc-demo-released
 
 demo-released-run:
 	$(ZIGC_RELEASED) run /tmp/zigc-demo-released
@@ -92,7 +96,7 @@ ship: release
 	$(MAKE) upgrade
 
 .PHONY: all build test clean release \
-        demo demo-init demo-build demo-safe demo-run \
-        demo-released demo-released-check demo-released-init demo-released-build \
-        demo-released-safe demo-released-run \
+        demo demo-init demo-build demo-safe demo-fix demo-run \
+        demo-released demo-released-check demo-released-init demo-released-safe \
+        demo-released-fix demo-released-build demo-released-run \
         test-all upgrade ship

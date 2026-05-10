@@ -16,10 +16,13 @@ pub const TMPL_BUILD_ZIG =
     \\    const target = b.standardTargetOptions(.{});
     \\    const optimize = b.standardOptimizeOption(.{});
     \\
+    \\    const is_wasm = target.result.cpu.arch == .wasm32 or target.result.cpu.arch == .wasm64;
+    \\    const is_freestanding = target.result.os.tag == .freestanding;
+    \\
     \\    const mod = b.createModule(.{
     \\        .target = target,
     \\        .optimize = optimize,
-    \\        .link_libc = true,
+    \\        .link_libc = !is_freestanding,
     \\    });
     \\
     \\    mod.addIncludePath(b.path("src"));
@@ -43,11 +46,13 @@ pub const TMPL_BUILD_ZIG =
     \\    });
     \\    b.installArtifact(exe);
     \\
-    \\    const run_cmd = b.addRunArtifact(exe);
-    \\    run_cmd.step.dependOn(b.getInstallStep());
-    \\    if (b.args) |args| run_cmd.addArgs(args);
-    \\    const run_step = b.step("run", "Build and run");
-    \\    run_step.dependOn(&run_cmd.step);
+    \\    if (!is_wasm) {
+    \\        const run_cmd = b.addRunArtifact(exe);
+    \\        run_cmd.step.dependOn(b.getInstallStep());
+    \\        if (b.args) |args| run_cmd.addArgs(args);
+    \\        const run_step = b.step("run", "Build and run");
+    \\        run_step.dependOn(&run_cmd.step);
+    \\    }
     \\}
     \\
 ;
@@ -1542,6 +1547,18 @@ pub fn cmdBuild(io: std.Io, allocator: std.mem.Allocator, extra: []const []const
     }
     const argv = try buildArgv(ar, base.items, parsed.rest);
     try execZig(io, allocator, argv);
+
+    // Also build wasm (best-effort, skip if user already specified a target)
+    var has_target = false;
+    for (parsed.rest) |arg| {
+        if (std.mem.startsWith(u8, arg, "-Dtarget=") or
+            std.mem.eql(u8, arg, "--wasm") or
+            std.mem.eql(u8, arg, "--wasi")) {
+            has_target = true;
+            break;
+        }
+    }
+    if (!has_target) buildWasm(io, allocator, ar, parsed.dir, parsed.rest);
 }
 
 pub fn cmdRun(io: std.Io, allocator: std.mem.Allocator, extra: []const []const u8) !void {
@@ -1558,34 +1575,40 @@ pub fn cmdRun(io: std.Io, allocator: std.mem.Allocator, extra: []const []const u
     try execZig(io, allocator, argv);
 }
 
-/// Best-effort wasm build: build to a temp prefix, then copy artifacts to out/wasm/.
-fn buildWasm(io: std.Io, allocator: std.mem.Allocator, ar: std.mem.Allocator, extra: []const []const u8) void {
+/// Best-effort wasm build: build to a temp prefix, then copy artifacts to zig-out/wasm/.
+fn buildWasm(io: std.Io, allocator: std.mem.Allocator, ar: std.mem.Allocator, project_dir: ?[]const u8, extra: []const []const u8) void {
     const cwd = std.Io.Dir.cwd();
-    const TMP_PREFIX = ".zig-wasm-out";
+    const TMP = ".zig-wasm-out";
 
     // Build for wasm32-wasi with temp prefix
     var wasm_extra: std.ArrayList([]const u8) = .empty;
     wasm_extra.appendSlice(ar, extra) catch return;
-    // Only add wasm target if user hasn't specified a target
-    var has_target = false;
-    for (extra) |arg| {
-        if (std.mem.startsWith(u8, arg, "-Dtarget=") or
-            std.mem.eql(u8, arg, "--wasm") or
-            std.mem.eql(u8, arg, "--wasi")) has_target = true;
-    }
-    if (!has_target) wasm_extra.append(ar, "--wasi") catch return;
+    wasm_extra.append(ar, "--wasi") catch return;
 
-    const wasm_argv = buildArgv(ar, &.{ "zig", "build", "--prefix", TMP_PREFIX }, wasm_extra.items) catch return;
+    var base: std.ArrayList([]const u8) = .empty;
+    base.appendSlice(ar, &.{ "zig", "build", "--prefix", TMP }) catch return;
+    if (project_dir) |d| {
+        base.appendSlice(ar, &.{ "--build-file", std.fmt.allocPrint(ar, "{s}/build.zig", .{d}) catch return }) catch return;
+    }
+
+    const wasm_argv = buildArgv(ar, base.items, wasm_extra.items) catch return;
     execZig(io, allocator, wasm_argv) catch {
         std.debug.print("note: wasm build skipped (build failed)\n", .{});
         return;
     };
 
-    // Move artifacts from .zig-wasm-out/bin/ to out/wasm/
-    cwd.createDirPath(io, "out/wasm") catch return;
-    var wasm_bin = cwd.openDir(io, TMP_PREFIX ++ "/bin", .{ .iterate = true }) catch return;
+    // --prefix is relative to cwd, so temp paths are always cwd-relative.
+    // Final output goes into the project dir's zig-out/wasm/.
+    const out_path: []const u8 = if (project_dir) |d|
+        std.fmt.allocPrint(ar, "{s}/zig-out/wasm", .{d}) catch return
+    else
+        "zig-out/wasm";
+
+    // Move artifacts from <tmp>/bin/ to zig-out/wasm/
+    cwd.createDirPath(io, out_path) catch return;
+    var wasm_bin = cwd.openDir(io, TMP ++ "/bin", .{ .iterate = true }) catch return;
     defer wasm_bin.close(io);
-    var out_wasm = cwd.openDir(io, "out/wasm", .{}) catch return;
+    var out_wasm = cwd.openDir(io, out_path, .{}) catch return;
     defer out_wasm.close(io);
 
     var iter = wasm_bin.iterate();
@@ -1596,7 +1619,7 @@ fn buildWasm(io: std.Io, allocator: std.mem.Allocator, ar: std.mem.Allocator, ex
     }
 
     // Clean up temp dir
-    cwd.deleteTree(io, TMP_PREFIX) catch {};
+    cwd.deleteTree(io, TMP) catch {};
 }
 
 pub fn cmdRegistryGenerate(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
@@ -1782,7 +1805,7 @@ pub fn cmdRegistryUpdate(io: std.Io, allocator: std.mem.Allocator) !void {
 
 pub fn cmdClean(io: std.Io) !void {
     const cwd = std.Io.Dir.cwd();
-    for ([_][]const u8{ ".zig-cache", "zig-out", "out" }) |path| {
+    for ([_][]const u8{ ".zig-cache", "zig-out", "out", ".zig-wasm-out" }) |path| {
         cwd.deleteTree(io, path) catch {};
         std.debug.print("Removed {s}/\n", .{path});
     }

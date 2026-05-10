@@ -1135,7 +1135,7 @@ test "init --cpp: C project (no flag) is unchanged" {
     defer src.close(io);
 
     try hasContent(src, "main.c", "#include <stdio.h>");
-    try hasContent(proj, "build.zig", ".link_libc = true");
+    try hasContent(proj, "build.zig", ".link_libc = !is_freestanding");
     try hasContent(proj, "build.zig", "-std=c11");
     try lacksContent(proj, "build.zig", "link_libcpp");
 }
