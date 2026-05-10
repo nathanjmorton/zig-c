@@ -1417,7 +1417,7 @@ fn buildWasm(io: std.Io, allocator: std.mem.Allocator, ar: std.mem.Allocator, ex
     const cwd = std.Io.Dir.cwd();
     const TMP_PREFIX = ".zig-wasm-out";
 
-    // Build for wasm32-freestanding with temp prefix
+    // Build for wasm32-wasi with temp prefix
     var wasm_extra: std.ArrayList([]const u8) = .empty;
     wasm_extra.appendSlice(ar, extra) catch return;
     // Only add wasm target if user hasn't specified a target
@@ -1427,7 +1427,7 @@ fn buildWasm(io: std.Io, allocator: std.mem.Allocator, ar: std.mem.Allocator, ex
             std.mem.eql(u8, arg, "--wasm") or
             std.mem.eql(u8, arg, "--wasi")) has_target = true;
     }
-    if (!has_target) wasm_extra.append(ar, "--wasm") catch return;
+    if (!has_target) wasm_extra.append(ar, "--wasi") catch return;
 
     const wasm_argv = buildArgv(ar, &.{ "zig", "build", "--prefix", TMP_PREFIX }, wasm_extra.items) catch return;
     execZig(io, allocator, wasm_argv) catch {
