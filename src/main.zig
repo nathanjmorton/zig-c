@@ -19,6 +19,7 @@ const usage =
     \\  zigc list                          List installed dependencies
     \\  zigc clean                         Remove .zig-cache/, zig-out/, and out/
     \\  zigc upgrade                       Upgrade zigc to the latest release
+    \\  zigc version                       Print zigc version
     \\  zigc help                          Show this help
     \\
     \\Quick start:
@@ -85,6 +86,11 @@ pub fn main(init: std.process.Init) !void {
         try lib.cmdClean(io);
     } else if (std.mem.eql(u8, cmd, "upgrade")) {
         try lib.cmdUpgrade(io, allocator, "zigc", lib.VERSION, "nathanjmorton/zigc");
+    } else if (std.mem.eql(u8, cmd, "version") or
+        std.mem.eql(u8, cmd, "--version") or
+        std.mem.eql(u8, cmd, "-v"))
+    {
+        std.debug.print("{s}\n", .{lib.VERSION});
     } else if (std.mem.eql(u8, cmd, "help") or
         std.mem.eql(u8, cmd, "--help") or
         std.mem.eql(u8, cmd, "-h"))
